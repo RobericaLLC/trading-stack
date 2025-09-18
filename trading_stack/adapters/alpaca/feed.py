@@ -6,9 +6,9 @@ import os
 from datetime import UTC, datetime, timedelta
 
 try:
-    import websockets  # noqa: F401
-except Exception:  # pragma: no cover
-    websockets = None  # type: ignore[assignment]
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None  # type: ignore[assignment,unused-ignore]
 
 from trading_stack.core.schemas import MarketTrade
 
