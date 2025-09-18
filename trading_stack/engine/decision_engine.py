@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from trading_stack.core.schemas import Bar1s, NewOrder
+from trading_stack.risk.gate import RiskConfig, pretrade_check
 from trading_stack.strategy.baseline import MeanReversion1S
-from trading_stack.risk.gate import pretrade_check, RiskConfig
+
 
 class DecisionEngine:
     def __init__(self, symbol: str, threshold: float, max_notional: float, price_band_bps: int):

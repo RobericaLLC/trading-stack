@@ -1,7 +1,10 @@
 from __future__ import annotations
-import typer
-from datetime import datetime, timedelta, timezone
+
 import random
+from datetime import UTC, datetime, timedelta
+
+import typer
+
 from trading_stack.core.schemas import Bar1s
 from trading_stack.storage.parquet_store import write_events
 
@@ -11,9 +14,9 @@ app = typer.Typer(help="feedd: data ingest (synthetic mode in scaffold)")
 def main(mode: str = typer.Option("synthetic", help="synthetic only in scaffold"),
          symbol: str = "SPY",
          minutes: int = 1,
-         out: str = "data/synth_bars.parquet"):
+         out: str = "data/synth_bars.parquet") -> None:
     assert mode == "synthetic", "Scaffold supports only synthetic mode"
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     bars: list[Bar1s] = []
     px = 500.0
     for i in range(minutes * 60):

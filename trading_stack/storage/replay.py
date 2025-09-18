@@ -1,9 +1,12 @@
 from __future__ import annotations
-import argparse, time
-from pathlib import Path
-from datetime import datetime, timezone
+
+import argparse
+import time
+
 import pandas as pd
+
 from trading_stack.core.schemas import MarketTrade
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()

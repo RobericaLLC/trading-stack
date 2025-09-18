@@ -1,8 +1,14 @@
 from __future__ import annotations
+
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Type
+from typing import TypeVar
+
 import pandas as pd
 from pydantic import BaseModel
+
+T = TypeVar('T', bound=BaseModel)
+
 
 def _df_from_models(items: Iterable[BaseModel]) -> pd.DataFrame:
     rows = [i.model_dump() for i in items]
@@ -16,7 +22,7 @@ def write_events(path: str | Path, items: Iterable[BaseModel]) -> None:
         return
     df.to_parquet(path, index=False)
 
-def read_events(path: str | Path, model: Type[BaseModel]) -> list[BaseModel]:
+def read_events(path: str | Path, model: type[T]) -> list[T]:
     df = pd.read_parquet(path)
     out = []
     for _, row in df.iterrows():

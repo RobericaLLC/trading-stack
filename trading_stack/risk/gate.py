@@ -1,6 +1,9 @@
 from __future__ import annotations
-from trading_stack.core.schemas import NewOrder
+
 from dataclasses import dataclass
+
+from trading_stack.core.schemas import NewOrder
+
 
 @dataclass
 class RiskConfig:

@@ -1,11 +1,16 @@
 from __future__ import annotations
-import typer, os, json, hashlib
+
+import hashlib
+import json
+from datetime import UTC, datetime
 from pathlib import Path
-from rich.table import Table
+
+import typer
 from rich.console import Console
-from trading_stack.core.schemas import Bar1s, MarketTrade
-from trading_stack.storage.parquet_store import write_events, read_events
-from datetime import datetime, timezone, timedelta
+from rich.table import Table
+
+from trading_stack.core.schemas import Bar1s
+from trading_stack.storage.parquet_store import read_events, write_events
 
 app = typer.Typer(help="Scorecard: PASS/FAIL gates for promotion")
 
@@ -13,7 +18,7 @@ def _ok(v: bool) -> str:
     return "[green]PASS[/green]" if v else "[red]FAIL[/red]"
 
 @app.command()
-def app(since: str = "1d"):
+def main(since: str = "1d") -> None:  # noqa: ARG001
     console = Console()
     table = Table(title="Trading Stack Scorecard")
     table.add_column("Check")
@@ -21,7 +26,7 @@ def app(since: str = "1d"):
     table.add_column("Result")
 
     # 1) Storage round-trip on sample Bar1s
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     tmp = Path("./data/_scorecard_bars.parquet")
     bars = [Bar1s(ts=now, symbol="SPY", open=500, high=501, low=499, close=500.5, volume=100)]
     write_events(tmp, bars)
@@ -35,8 +40,10 @@ def app(since: str = "1d"):
     table.add_row("determinism_hash", h, _ok(len(h) == 12))
 
     # 3) Sample data presence
-    sample = Path("sample_data/events_spy_2024-09-10.parquet"); sample2 = Path("sample_data/events_spy_2024-09-10.csv")
-    table.add_row("sample_data_present", str(sample.exists() or sample2.exists()), _ok(sample.exists() or sample2.exists()))
+    sample = Path("sample_data/events_spy_2024-09-10.parquet")
+    sample2 = Path("sample_data/events_spy_2024-09-10.csv")
+    exists = sample.exists() or sample2.exists()
+    table.add_row("sample_data_present", str(exists), _ok(exists))
 
     # 4) Clock sanity
     skew_ok = True  # In scaffold we assert no skew; real check uses feed vs system
