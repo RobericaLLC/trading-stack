@@ -1,15 +1,18 @@
 from __future__ import annotations
-from typing import Optional, Literal, List
-from pydantic import BaseModel, Field
+
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
 
 class MarketTrade(BaseModel):
     ts: datetime = Field(..., description="Exchange timestamp (UTC)")
     symbol: str
     price: float
     size: int
-    venue: Optional[str] = None
-    source: Optional[str] = None
+    venue: str | None = None
+    source: str | None = None
 
 class MarketQuote(BaseModel):
     ts: datetime
@@ -18,7 +21,7 @@ class MarketQuote(BaseModel):
     ask: float
     bid_size: int
     ask_size: int
-    source: Optional[str] = None
+    source: str | None = None
 
 class Bar1s(BaseModel):
     ts: datetime
@@ -34,14 +37,14 @@ class NewOrder(BaseModel):
     side: Literal["BUY","SELL"]
     qty: float
     tif: Literal["IOC","DAY","GTC"] = "DAY"
-    limit: Optional[float] = None
-    tag: Optional[str] = None
+    limit: float | None = None
+    tag: str | None = None
     ts: datetime
 
 class OrderState(BaseModel):
-    broker_order_id: Optional[str] = None
+    broker_order_id: str | None = None
     state: Literal["NEW","ACK","REJ","PARTIAL","FILL","CANCEL"]
-    reason: Optional[str] = None
+    reason: str | None = None
     ts: datetime
 
 class Fill(BaseModel):
@@ -51,7 +54,7 @@ class Fill(BaseModel):
     qty: float
     price: float
     fee: float = 0.0
-    order_tag: Optional[str] = None
+    order_tag: str | None = None
 
 class LedgerEntry(BaseModel):
     ts: datetime
@@ -62,4 +65,4 @@ class LLMParamProposal(BaseModel):
     ts: datetime
     symbol: str
     params: dict
-    notes: Optional[str] = None
+    notes: str | None = None

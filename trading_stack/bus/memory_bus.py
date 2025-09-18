@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 import asyncio
-from typing import AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
+
 
 class MemoryBus:
     def __init__(self) -> None:
-        self._topics: Dict[str, List[asyncio.Queue]] = {}
+        self._topics: dict[str, list[asyncio.Queue]] = {}
 
     async def publish(self, topic: str, item: dict) -> None:
         for q in self._topics.get(topic, []):

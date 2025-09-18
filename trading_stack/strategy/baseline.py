@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from collections import deque
+from datetime import UTC
+
 from trading_stack.core.schemas import Bar1s, NewOrder
-from datetime import datetime, timezone
+
 
 class MeanReversion1S:
     """
@@ -22,9 +25,15 @@ class MeanReversion1S:
         mean = sum(self.buf) / len(self.buf)
         dev_bps = (bar.close / mean - 1.0) * 1e4
         orders: list[NewOrder] = []
-        ts = bar.ts if bar.ts.tzinfo else bar.ts.replace(tzinfo=timezone.utc)
+        ts = bar.ts if bar.ts.tzinfo else bar.ts.replace(tzinfo=UTC)
         if dev_bps > self.th:
-            orders.append(NewOrder(symbol=self.symbol, side="SELL", qty=1, limit=bar.close, tag="mr_short", ts=ts))
+            orders.append(NewOrder(
+                symbol=self.symbol, side="SELL", qty=1,
+                limit=bar.close, tag="mr_short", ts=ts
+            ))
         elif dev_bps < -self.th:
-            orders.append(NewOrder(symbol=self.symbol, side="BUY", qty=1, limit=bar.close, tag="mr_long", ts=ts))
+            orders.append(NewOrder(
+                symbol=self.symbol, side="BUY", qty=1,
+                limit=bar.close, tag="mr_long", ts=ts
+            ))
         return orders
