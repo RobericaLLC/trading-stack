@@ -1,8 +1,6 @@
 """Basic tests for trading_stack schemas."""
 from datetime import UTC, datetime
 
-import pytest
-
 from trading_stack.core.schemas import Bar1s, MarketQuote, MarketTrade, NewOrder
 
 
