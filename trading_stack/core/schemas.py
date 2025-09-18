@@ -13,6 +13,7 @@ class MarketTrade(BaseModel):
     size: int
     venue: str | None = None
     source: str | None = None
+    ingest_ts: datetime | None = None
 
 class MarketQuote(BaseModel):
     ts: datetime

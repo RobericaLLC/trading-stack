@@ -18,7 +18,7 @@ def _ok(v: bool) -> str:
     return "[green]PASS[/green]" if v else "[red]FAIL[/red]"
 
 @app.command()
-def main(since: str = "1d") -> None:  # noqa: ARG001
+def main(since: str = "1d", symbol: str = "SPY", live_dir: str = "data/live") -> None:  # noqa: ARG001
     console = Console()
     table = Table(title="Trading Stack Scorecard")
     table.add_column("Check")
@@ -48,5 +48,26 @@ def main(since: str = "1d") -> None:  # noqa: ARG001
     # 4) Clock sanity
     skew_ok = True  # In scaffold we assert no skew; real check uses feed vs system
     table.add_row("clock_skew_ms", "0", _ok(skew_ok))
+
+    # Live capture SLOs (if present)
+    from trading_stack.core.schemas import MarketTrade
+    from trading_stack.ingest.metrics import freshness_p99_ms as _f99
+    from trading_stack.ingest.metrics import rth_gap_events as _gaps
+
+    live_root = Path(live_dir)
+    day_dirs = [p for p in live_root.glob("*") if p.is_dir()]
+    latest = max(day_dirs) if day_dirs else None
+    if latest:
+        trades_path = latest / f"trades_{symbol}.parquet"
+        if trades_path.exists():
+            trades = read_events(trades_path, MarketTrade)
+            f99 = _f99(trades)
+            gaps = _gaps(trades, max_gap_sec=2)
+            table.add_row("freshness_p99_ms", f"{f99:.1f}", _ok(f99 < 750.0))
+            table.add_row("rth_gap_events", str(gaps), _ok(gaps == 0))
+        else:
+            table.add_row("live_trades_present", "False", _ok(False))
+    else:
+        table.add_row("live_day_dir_present", "False", _ok(False))
 
     console.print(table)

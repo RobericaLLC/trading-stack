@@ -15,7 +15,8 @@ dependencies = [
   "pyarrow>=15.0.0",
   "duckdb>=1.0.0",
   "typer>=0.12.0",
-  "rich>=13.7.0"
+  "rich>=13.7.0",
+  "tzdata>=2024.1"
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 ]
 ib = ["ib-insync>=0.9.86"]
 dash = ["streamlit>=1.36.0"]
+feeds = ["websockets>=11.0"]
 
 [project.scripts]
 scorecard = "trading_stack.scorecard.main:app"
