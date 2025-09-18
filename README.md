@@ -1,5 +1,7 @@
 # Trading Stack (Scaffold)
 
+[![CI](https://github.com/RobericaLLC/trading-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/RobericaLLC/trading-stack/actions/workflows/ci.yml)
+
 A minimal, **deterministic trading spine** with a *scorecard-gated* promotion path.
 This is the thin vertical slice you will harden before adding feeds, options, EMSX, and LLM advisors.
 
