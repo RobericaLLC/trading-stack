@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trading-stack"
+version = "0.1.0"
+description = "Thin, deterministic trading spine with LLM advisors (scaffold)"
+authors = [{ name = "You" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.7.0",
+  "pandas>=2.2.0",
+  "pyarrow>=15.0.0",
+  "duckdb>=1.0.0",
+  "typer>=0.12.0",
+  "rich>=13.7.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.5.0",
+  "mypy>=1.8.0"
+]
+ib = ["ib-insync>=0.9.86"]
+dash = ["streamlit>=1.36.0"]
+
+[project.scripts]
+scorecard = "trading_stack.scorecard.main:app"
+feedd = "trading_stack.services.feedd.main:app"
+engined = "trading_stack.services.engined.main:app"
+execd = "trading_stack.services.execd.main:app"

@@ -1,0 +1,6 @@
+# Phase 0 Rules (enforced in this repo)
+- Scope is Phase 0 only: scorecard, storage round-trip, tests, CI, lint/type infrastructure.
+- Do NOT add external services, feeds, LLM calls, or network code.
+- All edits must keep ruff, mypy, and pytest passing.
+- Maintain deterministic behavior; do not introduce randomness outside explicit synthetic data generation.
+- Prefer small, verifiable changes. If a change affects public interfaces (schemas, CLI), write or update tests first.

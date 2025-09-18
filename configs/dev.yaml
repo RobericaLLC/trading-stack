@@ -1,0 +1,13 @@
+bus:
+  kind: memory
+storage:
+  root: ./data
+strategy:
+  symbol: SPY
+  max_position: 5
+  bar_seconds: 1
+  threshold: 0.5
+risk:
+  max_notional: 2000
+  price_band_bps: 150
+  daily_loss_stop_bps: 100
