@@ -1,11 +1,12 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 
 from trading_stack.accounting.positions import compute_positions
 
 
-def test_positions_from_incremental_avg(tmp_path):
+def test_positions_from_incremental_avg(tmp_path: Path) -> None:
     p = tmp_path / "ledger.parquet"
     ts = datetime(2025,1,1,tzinfo=UTC)
     df = pd.DataFrame([

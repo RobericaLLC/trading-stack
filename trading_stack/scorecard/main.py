@@ -299,7 +299,7 @@ def main(
         props_path = latest_llm / f"proposals_{symbol}.parquet"
         if props_path.exists():
             dfp = pd.read_parquet(props_path)
-            cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=15)
+            cutoff = pd.Timestamp.utcnow() - pd.Timedelta(minutes=15)
             n15 = dfp[dfp["ts"] >= cutoff.isoformat()].shape[0]
             cost = float(dfp.get("cost_usd", pd.Series([0.0]*len(dfp))).sum())
             # schema conformance is ensured at write time; still assert required columns present

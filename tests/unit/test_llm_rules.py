@@ -6,7 +6,7 @@ import pandas as pd
 from trading_stack.llm.advisor import append_proposal, make_proposal
 
 
-def test_rules_provider_roundtrip(tmp_path: Path):
+def test_rules_provider_roundtrip(tmp_path: Path) -> None:
     # fabricate bars
     p = tmp_path / "bars.parquet"
     ts0 = datetime(2025,1,1,12,0,0,tzinfo=UTC)
