@@ -23,6 +23,7 @@ def freshness_p99_ms(trades: Iterable[MarketTrade]) -> float:
         return float("inf")
     return float(np.percentile(vals, 99))
 
+
 def rth_gap_events(
     trades: Iterable[MarketTrade], max_gap_sec: int = 2, tz_name: str = "America/New_York"
 ) -> int:
@@ -43,6 +44,7 @@ def rth_gap_events(
             gaps += 1
     return gaps
 
+
 def trade_second_coverage(
     trades: Iterable[MarketTrade], tz_name: str = "America/New_York"
 ) -> float:
@@ -54,7 +56,7 @@ def trade_second_coverage(
     for t in trades:
         ts = t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=UTC)
         et = ts.astimezone(tz)
-        if et.weekday() >= 5 or et.time() < time(9,30) or et.time() >= time(16,0):
+        if et.weekday() >= 5 or et.time() < time(9, 30) or et.time() >= time(16, 0):
             continue
         floor = ts.replace(microsecond=0)
         secs.add(floor)
@@ -64,6 +66,7 @@ def trade_second_coverage(
         return 0.0
     window = int((max_ts - min_ts).total_seconds()) + 1
     return len(secs) / max(window, 1)
+
 
 def clock_offset_median_ms(trades: Iterable[MarketTrade]) -> float:
     """Median (ingest_ts - ts) in ms. Negative => system clock behind exchange clock."""

@@ -11,6 +11,7 @@ from trading_stack.llm.router import ProviderResponse, get_provider
 
 def _features_from_bars(bars: list[Bar1s]) -> dict[str, float]:
     import numpy as np
+
     if not bars:
         return {"realized_vol_bps": 0.0, "spread_proxy_bps": 0.0, "trend_bps": 0.0}
     closes = np.array([b.close for b in bars], dtype=float)
@@ -19,8 +20,9 @@ def _features_from_bars(bars: list[Bar1s]) -> dict[str, float]:
     # proxy for spread: normalized intrabar range
     ranges = np.array([max(0.0, b.high - b.low) / (b.close or 1.0) * 1e4 for b in bars])
     spr_bps = float(np.median(ranges)) if len(ranges) else 0.0
-    trend_bps = float((closes[-1]/closes[0] - 1.0)*1e4) if len(closes)>1 else 0.0
+    trend_bps = float((closes[-1] / closes[0] - 1.0) * 1e4) if len(closes) > 1 else 0.0
     return {"realized_vol_bps": vol_bps, "spread_proxy_bps": spr_bps, "trend_bps": trend_bps}
+
 
 def _bars_window(bars_path: Path, window_sec: int) -> list[Bar1s]:
     df = pd.read_parquet(bars_path)
@@ -31,10 +33,12 @@ def _bars_window(bars_path: Path, window_sec: int) -> list[Bar1s]:
     cutoff = df["ts"].iloc[-1] - pd.Timedelta(seconds=window_sec)
     df = df[df["ts"] > cutoff]
     from trading_stack.core.schemas import Bar1s as Bar
+
     return [
         Bar.model_validate(r._asdict() if hasattr(r, "_asdict") else r.to_dict())
         for _, r in df.iterrows()
     ]
+
 
 def make_proposal(symbol: str, bars_path: Path, provider_kind: str) -> LLMParamProposal:
     bars = _bars_window(bars_path, window_sec=120)  # last 2 minutes
@@ -43,6 +47,7 @@ def make_proposal(symbol: str, bars_path: Path, provider_kind: str) -> LLMParamP
     ts = datetime.now(UTC)
     proposal = LLMParamProposal(ts=ts, symbol=symbol, params=resp.params, notes=resp.notes)
     return proposal
+
 
 def append_proposal(
     out_path: Path, proposal: LLMParamProposal, provider: str, cost_usd: float

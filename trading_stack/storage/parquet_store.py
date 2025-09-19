@@ -7,12 +7,13 @@ from typing import TypeVar
 import pandas as pd
 from pydantic import BaseModel
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar("T", bound=BaseModel)
 
 
 def _df_from_models(items: Iterable[BaseModel]) -> pd.DataFrame:
     rows = [i.model_dump() for i in items]
     return pd.DataFrame(rows)
+
 
 def write_events(path: str | Path, items: Iterable[BaseModel]) -> None:
     path = Path(path)
@@ -21,6 +22,7 @@ def write_events(path: str | Path, items: Iterable[BaseModel]) -> None:
     if df.empty:
         return
     df.to_parquet(path, index=False)
+
 
 def read_events(path: str | Path, model: type[T]) -> list[T]:
     df = pd.read_parquet(path)

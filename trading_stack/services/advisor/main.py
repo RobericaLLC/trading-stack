@@ -10,6 +10,7 @@ from trading_stack.llm.advisor import append_proposal, make_proposal
 
 app = typer.Typer(help="LLM advisor (shadow). Emits strict-JSON param proposals; does NOT trade.")
 
+
 @app.command()
 def main(
     symbol: str = "SPY",
@@ -39,6 +40,7 @@ def main(
         append_proposal(out_path, proposal, provider, cost)
         spent += cost
         time.sleep(interval_sec)
+
 
 if __name__ == "__main__":
     app()

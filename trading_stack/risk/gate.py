@@ -15,11 +15,13 @@ class RiskConfig:
     daily_loss_stop_pct: float = 1.0  # 1% of equity
     killswitch_path: str = "RUN/HALT"
 
+
 def price_band_ok(last: float, limit: float | None, band_bps: int) -> bool:
     if limit is None:
         return True
     band = last * band_bps / 10000.0
     return (limit >= last - band) and (limit <= last + band)
+
 
 def is_killswitched(cfg: RiskConfig) -> bool:
     """Check if killswitch file exists."""
@@ -31,21 +33,21 @@ def pretrade_check(order: NewOrder, px_last: float, cfg: RiskConfig) -> tuple[bo
     # Check killswitch first
     if is_killswitched(cfg):
         return False, "killswitch active"
-    
+
     # Symbol whitelist
     if order.symbol not in cfg.symbol_whitelist:
         return False, f"symbol {order.symbol} not in whitelist"
-    
+
     # Max notional check
     notional = (order.limit or px_last) * order.qty
     if notional > cfg.max_notional:
         return False, f"notional {notional:.2f} > max {cfg.max_notional:.2f}"
-    
+
     # Price band check
     if not price_band_ok(px_last, order.limit, cfg.price_band_bps):
         return False, "limit outside price band"
-    
+
     # TODO: max_open_orders and daily_loss_stop require ledger state
     # These will be implemented when we have access to current positions
-    
+
     return True, "OK"

@@ -14,7 +14,7 @@ def test_ledger_roundtrip(tmp_path: Path) -> None:
             "symbol": "SPY",
             "side": "BUY",
             "qty": 1,
-            "limit": 500.0
+            "limit": 500.0,
         }
     ]
     append_ledger(p, rows)
