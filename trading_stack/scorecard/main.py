@@ -24,6 +24,7 @@ def main(
     symbol: str = "SPY",
     live_dir: str = "data/live",
     sanity_window_min: int = 30,
+    llm_dir: str = "data/llm",
 ) -> None:
     console = Console()
     table = Table(title="Trading Stack Scorecard")
@@ -289,6 +290,29 @@ def main(
         table.add_row("uptime_rth", f"{uptime:.0f}%", _ok(uptime > 99.0))
     else:
         table.add_row("uptime_rth", "NA", _ok(False))
+
+    # LLM (shadow) SLOs
+    llm_root = Path(llm_dir)
+    day_dirs = [p for p in llm_root.glob("*") if p.is_dir()]
+    latest_llm = max(day_dirs) if day_dirs else None
+    if latest_llm:
+        props_path = latest_llm / f"proposals_{symbol}.parquet"
+        if props_path.exists():
+            dfp = pd.read_parquet(props_path)
+            cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=15)
+            n15 = dfp[dfp["ts"] >= cutoff.isoformat()].shape[0]
+            cost = float(dfp.get("cost_usd", pd.Series([0.0]*len(dfp))).sum())
+            # schema conformance is ensured at write time; still assert required columns present
+            required_cols = {"ts", "symbol", "signal.threshold_bps", "risk.multiplier", "provider"}
+            schema_ok = required_cols.issubset(dfp.columns)
+            table.add_row("llm_schema_conformance", "100%" if schema_ok else "0%", _ok(schema_ok))
+            # >= 6 proposals in last 15m (~every 2-3 min minimum)
+            table.add_row("llm_shadow_events_15m", str(n15), _ok(n15 >= 6))
+            table.add_row("llm_cost_per_day_usd", f"{cost:.2f}", _ok(cost <= 10.0))
+        else:
+            table.add_row("llm_proposals_present", "False", _ok(False))
+    else:
+        table.add_row("llm_day_dir_present", "False", _ok(False))
 
     console.print(table)
 
