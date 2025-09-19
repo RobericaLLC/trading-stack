@@ -67,13 +67,12 @@ def trade_second_coverage(
 
 def clock_offset_median_ms(trades: Iterable[MarketTrade]) -> float:
     """Median (ingest_ts - ts) in ms. Negative => system clock behind exchange clock."""
-    from datetime import timezone
     vals = []
     for t in trades:
         if t.ingest_ts is None:
             continue
-        ts = t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=timezone.utc)
-        ing = t.ingest_ts if t.ingest_ts.tzinfo else t.ingest_ts.replace(tzinfo=timezone.utc)
+        ts = t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=UTC)
+        ing = t.ingest_ts if t.ingest_ts.tzinfo else t.ingest_ts.replace(tzinfo=UTC)
         vals.append((ing - ts).total_seconds() * 1_000.0)
     if not vals:
         return float("nan")

@@ -20,11 +20,11 @@ def _ok(v: bool) -> str:
 
 @app.command()
 def main(
-    since: str = "1d",
+    since: str = "1d",  # noqa: ARG001
     symbol: str = "SPY",
     live_dir: str = "data/live",
     sanity_window_min: int = 30,
-) -> None:  # noqa: ARG001
+) -> None:
     console = Console()
     table = Table(title="Trading Stack Scorecard")
     table.add_column("Check")
@@ -57,13 +57,19 @@ def main(
 
     # 5) Live capture SLOs (if present)
     import pandas as pd
-    
+
     from trading_stack.core.schemas import MarketTrade
     from trading_stack.ingest.metrics import (
-        freshness_p99_ms as _f99,
-        rth_gap_events as _gaps,
-        trade_second_coverage as _cov,
         clock_offset_median_ms as _offs,
+    )
+    from trading_stack.ingest.metrics import (
+        freshness_p99_ms as _f99,
+    )
+    from trading_stack.ingest.metrics import (
+        rth_gap_events as _gaps,
+    )
+    from trading_stack.ingest.metrics import (
+        trade_second_coverage as _cov,
     )
 
     live_root = Path(live_dir)
@@ -79,14 +85,18 @@ def main(
             # Clock offset
             offs = _offs(trades_w_ing) if sample_n else float("nan")
             offs_ok = (abs(offs) < 1000.0) if sample_n else False
-            table.add_row("clock_offset_median_ms", f"{offs:.1f}" if sample_n else "NA", _ok(offs_ok))
+            table.add_row(
+                "clock_offset_median_ms", f"{offs:.1f}" if sample_n else "NA", _ok(offs_ok)
+            )
 
             # Freshness only when offset is sane and we have enough samples
             if offs_ok and sample_n >= 20:
                 f99 = _f99(trades_w_ing)
                 table.add_row("freshness_p99_ms", f"{f99:.1f}", _ok(f99 < 750.0))
             else:
-                table.add_row("freshness_p99_ms", "skipped (clock skew or small sample)", _ok(False))
+                table.add_row(
+                    "freshness_p99_ms", "skipped (clock skew or small sample)", _ok(False)
+                )
 
             # IEX vs SIP gating
             srcs = {t.source or "" for t in trades}
@@ -127,7 +137,9 @@ def main(
                 ack_p95 = float(m["ack_ms"].quantile(0.95))
                 env = os.environ.get("EXEC_ENV", "paper").lower()
                 default_thresh = 1000.0 if env == "paper" else 400.0
-                ack_threshold = float(os.environ.get("ACK_P95_MS", str(default_thresh if env != "paper" else 1200.0)))
+                ack_threshold = float(
+                    os.environ.get("ACK_P95_MS", str(default_thresh if env != "paper" else 1200.0))
+                )
                 table.add_row("ack_latency_p95_ms", f"{ack_p95:.1f}", _okf(ack_p95 < ack_threshold))
             else:
                 table.add_row("ack_latency_p95_ms", "NA", _okf(False))
@@ -138,7 +150,9 @@ def main(
             now = datetime.now(UTC)
             cut = now - timedelta(minutes=sanity_window_min)
 
-            sanity = df[(df["kind"] == "INTENT") & (df["tag"].astype(str).str.startswith("sanity_"))][["tag","ts"]]
+            sanity = df[
+                (df["kind"] == "INTENT") & (df["tag"].astype(str).str.startswith("sanity_"))
+            ][["tag", "ts"]]
             sanity = sanity[sanity["ts"] >= cut]
 
             acks_df = df[df["kind"] == "ACK"][["tag"]].drop_duplicates()
@@ -153,9 +167,15 @@ def main(
                 m = m.merge(cancels, on="tag", how="left").merge(fills, on="tag", how="left")
                 m["ok_cancel"] = m["has_cancel"].fillna(False) & m["has_fill"].isna()
                 rate = m["ok_cancel"].sum() / len(m) if len(m) else 0.0
-                table.add_row(f"cancel_success (sanity {sanity_window_min}m, acked)", f"{rate:.0%}", _okf(rate == 1.0))
+                table.add_row(
+                    f"cancel_success (sanity {sanity_window_min}m, acked)",
+                    f"{rate:.0%}",
+                    _okf(rate == 1.0)
+                )
             else:
-                table.add_row(f"cancel_success (sanity {sanity_window_min}m, acked)", "NA", _okf(False))
+                table.add_row(
+                    f"cancel_success (sanity {sanity_window_min}m, acked)", "NA", _okf(False)
+                )
 
             # TCA shortfall median (bps) for tags with PNL_SNAPSHOT.shortfall_bps
             pnl = df[df["kind"] == "PNL_SNAPSHOT"]

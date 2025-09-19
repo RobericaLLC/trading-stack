@@ -62,10 +62,10 @@ def _arrival_from_bars(bars_path: str | None, ts: datetime, symbol: str) -> floa
 @app.command("one-shot")
 def one_shot(  # noqa: B008
     symbol: str = typer.Option("SPY"),
-    side: Side = typer.Option(Side.BUY),
+    side: Side = typer.Option(Side.BUY),  # noqa: B008
     qty: float = typer.Option(1),
     limit: float | None = typer.Option(None),
-    tif: TIF = typer.Option(TIF.DAY),
+    tif: TIF = typer.Option(TIF.DAY),  # noqa: B008
     tag: str | None = typer.Option(None),
     bars_path: str | None = typer.Option(
         None, help="Path to bars1s_{symbol}.parquet for arrival px"

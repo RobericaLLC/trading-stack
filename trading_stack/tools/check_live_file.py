@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+
 def main(path: str) -> None:
     p = Path(path)
     df = pd.read_parquet(p)
