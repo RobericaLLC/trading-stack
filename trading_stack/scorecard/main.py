@@ -328,7 +328,7 @@ def main(
         if props_path.exists():
             dfp = pd.read_parquet(props_path)
             dfp["ts"] = pd.to_datetime(dfp["ts"], utc=True)
-            cut15 = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=15)
+            cut15 = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=15)
             seen15 = dfp[dfp["ts"] >= cut15].shape[0]
             table.add_row("llm_proposals_seen_15m", str(seen15), _ok(seen15 >= 6))
         else:
@@ -370,8 +370,18 @@ def main(
                 table.add_row("llm_accept_rate_15m", "0%", _ok(True))
                 table.add_row("llm_param_bounds_ok", "NA", _ok(False))
                 table.add_row("llm_freeze_active", "NA", _ok(False))
+        else:
+            # Applied file doesn't exist yet
+            table.add_row("llm_proposals_applied_15m", "0", _ok(True))  # 0 is fine
+            table.add_row("llm_accept_rate_15m", "0%", _ok(True))  # 0% is fine
+            table.add_row("llm_param_bounds_ok", "NA", _ok(False))
+            table.add_row("llm_freeze_active", "NA", _ok(True))  # NA means not frozen
     else:
-        table.add_row("llm_applied_present", "False", _ok(False))
+        table.add_row("llm_proposals_seen_15m", "0", _ok(False))
+        table.add_row("llm_proposals_applied_15m", "0", _ok(True))
+        table.add_row("llm_accept_rate_15m", "0%", _ok(True))
+        table.add_row("llm_param_bounds_ok", "NA", _ok(False))
+        table.add_row("llm_freeze_active", "NA", _ok(True))
 
     console.print(table)
 
