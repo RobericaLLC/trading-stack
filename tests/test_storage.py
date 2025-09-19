@@ -1,5 +1,5 @@
 """Tests for storage functionality."""
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from trading_stack.core.schemas import Bar1s
@@ -21,7 +21,7 @@ def test_storage_round_trip(tmp_path: Path) -> None:
             volume=100
         ),
         Bar1s(
-            ts=now.replace(second=now.second + 1),
+            ts=now + timedelta(seconds=1),
             symbol="SPY",
             open=500.5,
             high=501.5,
