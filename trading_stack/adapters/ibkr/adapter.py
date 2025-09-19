@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 try:
     from ib_insync import IB, LimitOrder, MarketOrder, Stock, Trade
 except ImportError:  # pragma: no cover
-    IB = None  # type: ignore
+    IB = None  # type: ignore[assignment,misc,unused-ignore]
 
 from trading_stack.core.schemas import NewOrder
 
