@@ -15,13 +15,14 @@ class PositionSnapshot:
     avg_cost: float
     realized_pnl: float
 
+
 def _iter_fills_incremental(df: pd.DataFrame) -> Generator[dict[str, Any], None, None]:
     """
     Ledger FILL rows contain 'fill_qty' (incremental) and 'avg_px' (cumulative avg).
     Recover each incremental fill price using: p_i = (A_n*Q_n - A_{n-1}*Q_{n-1}) / (Q_n - Q_{n-1})
     Grouped by 'tag' to avoid cross-trade contamination.
     """
-    need = {"kind","tag","symbol","side","fill_qty","avg_px","event_ts"}
+    need = {"kind", "tag", "symbol", "side", "fill_qty", "avg_px", "event_ts"}
     if not need.issubset(set(df.columns)):
         return
     df = df[df["kind"] == "FILL"].copy()
@@ -30,7 +31,7 @@ def _iter_fills_incremental(df: pd.DataFrame) -> Generator[dict[str, Any], None,
     for _, r in df.iterrows():
         tag = str(r["tag"])
         q = float(r.get("fill_qty", 0.0) or 0.0)
-        a = float(r.get("avg_px", 0.0) or 0.0)       # cumulative average price after this fill
+        a = float(r.get("avg_px", 0.0) or 0.0)  # cumulative average price after this fill
         if q <= 0 or a <= 0:
             continue
         q_prev, a_prev = prev.get(tag, (0.0, 0.0))
@@ -38,9 +39,14 @@ def _iter_fills_incremental(df: pd.DataFrame) -> Generator[dict[str, Any], None,
         px_i = a if q_prev == 0 else ((a * q_new) - (a_prev * q_prev)) / q
         prev[tag] = (q_new, a)
         yield dict(
-            ts=r.get("event_ts"), tag=tag, symbol=str(r["symbol"]),
-            side=str(r["side"]), qty=q, px=float(px_i)
+            ts=r.get("event_ts"),
+            tag=tag,
+            symbol=str(r["symbol"]),
+            side=str(r["side"]),
+            qty=q,
+            px=float(px_i),
         )
+
 
 def compute_positions(ledger_path: str | Path) -> dict[str, PositionSnapshot]:
     p = Path(ledger_path)
@@ -67,6 +73,7 @@ def compute_positions(ledger_path: str | Path) -> dict[str, PositionSnapshot]:
         snaps[sym] = pos
     return snaps
 
+
 def write_snapshot(ledger_path: str | Path, out_path: str | Path) -> None:
     snaps = compute_positions(ledger_path)
     rows = [
@@ -75,8 +82,8 @@ def write_snapshot(ledger_path: str | Path, out_path: str | Path) -> None:
     ]
     if not rows:
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
-            columns=["symbol", "qty", "avg_cost", "realized_pnl"]
-        ).to_parquet(out_path, index=False)
+        pd.DataFrame(columns=["symbol", "qty", "avg_cost", "realized_pnl"]).to_parquet(
+            out_path, index=False
+        )
         return
     pd.DataFrame(rows).to_parquet(out_path, index=False)

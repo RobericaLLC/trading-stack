@@ -15,8 +15,10 @@ from trading_stack.storage.parquet_store import read_events, write_events
 
 app = typer.Typer(help="Scorecard: PASS/FAIL gates for promotion")
 
+
 def _ok(v: bool) -> str:
     return "[green]PASS[/green]" if v else "[red]FAIL[/red]"
+
 
 @app.command()
 def main(
@@ -169,7 +171,7 @@ def main(
                 table.add_row(
                     f"cancel_success (sanity {sanity_window_min}m, acked)",
                     f"{rate:.0%}",
-                    _okf(rate == 1.0)
+                    _okf(rate == 1.0),
                 )
             else:
                 table.add_row(
@@ -189,25 +191,25 @@ def main(
         table.add_row("exec_day_dir_present", "False", _ok(False))
 
     # LIVE LOOP HEALTH METRICS
-    
+
     # ENGINE METRICS
     # Check queue database for queue depth and dead letters
     queue_path = Path("data/queue.db")
     if queue_path.exists():
         from trading_stack.ipc.sqlite_queue import connect, dead_letter_count, depth
-        
+
         con = connect(queue_path)
         queue_d = depth(con, "order_intents")
         dead_count = dead_letter_count(con, "order_intents")
         table.add_row("queue_depth", str(queue_d), _ok(queue_d == 0))
         table.add_row("dead_letter_count", str(dead_count), _ok(dead_count == 0))
         con.close()
-    
+
     # Check engine coverage by comparing shadow intents to bars
     if latest_exec and latest:
         shadow_ledger = latest_exec / "ledger.parquet"
         bars_path = latest / f"bars1s_{symbol}.parquet"
-        
+
         if shadow_ledger.exists() and bars_path.exists():
             # Read shadow intents from last 15 minutes
             ledger_df = pd.read_parquet(shadow_ledger)
@@ -220,12 +222,12 @@ def main(
                 table.add_row(
                     "intents_enqueued_last_15m", str(intent_count), _ok(intent_count >= 1)
                 )
-                
+
                 # Calculate engine coverage
                 bars_df = pd.read_parquet(bars_path)
                 bars_df["ts"] = pd.to_datetime(bars_df["ts"])
                 recent_bars = bars_df[bars_df["ts"] >= cut]
-                
+
                 if not recent_bars.empty:
                     # Engine coverage = processed bars / total bars (using shadow intents as proxy)
                     # For now, assume engine processed all bars if it generated intents
@@ -238,37 +240,39 @@ def main(
             else:
                 table.add_row("intents_enqueued_last_15m", "0", _ok(False))
                 table.add_row("engine_coverage_last_15m", "0%", _ok(False))
-    
+
     # RISK METRICS
     if latest_exec:
         ledger_path = latest_exec / "ledger.parquet"
         if ledger_path.exists():
             df = pd.read_parquet(ledger_path)
-            
+
             # Check blocked orders in last 15 minutes
             cut = now - timedelta(minutes=15)
             recent_rej = df[(df["kind"] == "REJ") & (df["ts"] >= cut)]
             if "reason" in recent_rej.columns:
                 # Count rejections that are risk-related (exclude operational failures)
                 risk_reasons = [
-                    "killswitch", "whitelist", "notional", "price band",
-                    "max open", "daily loss"
+                    "killswitch",
+                    "whitelist",
+                    "notional",
+                    "price band",
+                    "max open",
+                    "daily loss",
                 ]
                 risk_blocks = recent_rej[
-                    recent_rej["reason"].str.contains(
-                        "|".join(risk_reasons), case=False, na=False
-                    )
+                    recent_rej["reason"].str.contains("|".join(risk_reasons), case=False, na=False)
                 ]
                 blocked_count = len(risk_blocks)
             else:
                 blocked_count = 0
             table.add_row("blocked_orders_last_15m", str(blocked_count), _ok(blocked_count == 0))
-            
+
             # Check if daily stop triggered
             killswitch_path = Path("RUN/HALT")
             daily_stop = killswitch_path.exists()
             table.add_row("daily_stop_triggered", str(daily_stop), _ok(not daily_stop))
-    
+
     # OPS METRICS - uptime check via heartbeat files
     heartbeat_dir = Path("RUN/heartbeat")
     if heartbeat_dir.exists():
@@ -284,7 +288,7 @@ def main(
                 all_up = all_up and up
             else:
                 all_up = False
-        
+
         # Calculate uptime percentage (simplified - just current state)
         uptime = 100.0 if all_up else 0.0
         table.add_row("uptime_rth", f"{uptime:.0f}%", _ok(uptime > 99.0))
@@ -301,7 +305,7 @@ def main(
             dfp = pd.read_parquet(props_path)
             cutoff = pd.Timestamp.utcnow() - pd.Timedelta(minutes=15)
             n15 = dfp[dfp["ts"] >= cutoff.isoformat()].shape[0]
-            cost = float(dfp.get("cost_usd", pd.Series([0.0]*len(dfp))).sum())
+            cost = float(dfp.get("cost_usd", pd.Series([0.0] * len(dfp))).sum())
             # schema conformance is ensured at write time; still assert required columns present
             required_cols = {"ts", "symbol", "signal.threshold_bps", "risk.multiplier", "provider"}
             schema_ok = required_cols.issubset(dfp.columns)
@@ -313,6 +317,69 @@ def main(
             table.add_row("llm_proposals_present", "False", _ok(False))
     else:
         table.add_row("llm_day_dir_present", "False", _ok(False))
+
+    # LLM (applied) SLOs
+    llm_root = Path(llm_dir)
+    day_dirs = [p for p in llm_root.glob("*") if p.is_dir()]
+    latest_llm = max(day_dirs) if day_dirs else None
+    if latest_llm:
+        props_path = latest_llm / f"proposals_{symbol}.parquet"
+        ap_path = latest_llm / f"applied_{symbol}.parquet"
+        cut15 = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=15)
+        
+        # Count proposals seen
+        seen15 = 0
+        if props_path.exists():
+            dfp = pd.read_parquet(props_path)
+            dfp["ts"] = pd.to_datetime(dfp["ts"], utc=True)
+            seen15 = dfp[dfp["ts"] >= cut15].shape[0]
+        table.add_row("llm_proposals_seen_15m", str(seen15), _ok(seen15 >= 6))
+
+        # Count applied and calculate rate
+        if ap_path.exists():
+            dfa = pd.read_parquet(ap_path)
+            if not dfa.empty:
+                dfa["ts"] = pd.to_datetime(dfa["ts"], utc=True)
+                a15 = dfa[dfa["ts"] >= cut15]
+                applied15 = a15[a15["delta_bps"].abs() > 0].shape[0]
+                # Calculate rate using actual proposal count
+                rate = applied15 / seen15 if seen15 > 0 else 0.0
+                table.add_row("llm_proposals_applied_15m", str(applied15), _ok(applied15 <= 2))
+                table.add_row("llm_accept_rate_15m", f"{rate:.0%}", _ok(rate <= 0.30))
+                # bounds check
+                params_path = Path("data/params") / f"runtime_{symbol}.json"
+                if params_path.exists():
+                    cur = json.loads(params_path.read_text(encoding="utf-8")).get(
+                        "signal_threshold_bps", 0.5
+                    )
+                    bounds_ok = 0.3 <= float(cur) <= 3.0
+                    table.add_row(
+                        "llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok)
+                    )
+                # freeze status
+                freeze_active = (
+                    bool(a15.tail(1)["freeze"].iloc[0])
+                    if "freeze" in a15.columns and not a15.empty
+                    else False
+                )
+                table.add_row("llm_freeze_active", str(freeze_active), _ok(not freeze_active))
+            else:
+                table.add_row("llm_proposals_applied_15m", "0", _ok(False))
+                table.add_row("llm_accept_rate_15m", "0%", _ok(True))
+                table.add_row("llm_param_bounds_ok", "NA", _ok(False))
+                table.add_row("llm_freeze_active", "NA", _ok(False))
+        else:
+            # Applied file doesn't exist yet
+            table.add_row("llm_proposals_applied_15m", "0", _ok(True))  # 0 is fine
+            table.add_row("llm_accept_rate_15m", "0%", _ok(True))  # 0% is fine
+            table.add_row("llm_param_bounds_ok", "NA", _ok(False))
+            table.add_row("llm_freeze_active", "NA", _ok(True))  # NA means not frozen
+    else:
+        table.add_row("llm_proposals_seen_15m", "0", _ok(False))
+        table.add_row("llm_proposals_applied_15m", "0", _ok(True))
+        table.add_row("llm_accept_rate_15m", "0%", _ok(True))
+        table.add_row("llm_param_bounds_ok", "NA", _ok(False))
+        table.add_row("llm_freeze_active", "NA", _ok(True))
 
     console.print(table)
 

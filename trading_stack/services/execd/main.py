@@ -16,14 +16,17 @@ from trading_stack.tca.metrics import TCA
 
 app = typer.Typer(help="execd: IBKR paper adapter CLI (one-shot & sanity)")
 
+
 class Side(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+
 
 class TIF(str, Enum):
     IOC = "IOC"
     DAY = "DAY"
     GTC = "GTC"
+
 
 def _env(k: str, default: str | None = None) -> str:
     v = os.environ.get(k, default)
@@ -31,8 +34,10 @@ def _env(k: str, default: str | None = None) -> str:
         raise RuntimeError(f"Set env {k}")
     return v
 
+
 def _now() -> datetime:
     return datetime.now(UTC)
+
 
 @app.command("ib-handshake")
 def ib_handshake() -> None:
@@ -46,6 +51,7 @@ def ib_handshake() -> None:
     ib.disconnect()
     typer.echo("IBKR handshake OK")
 
+
 def _arrival_from_bars(bars_path: str | None, ts: datetime, symbol: str) -> float | None:
     if not bars_path:
         return None
@@ -58,6 +64,7 @@ def _arrival_from_bars(bars_path: str | None, ts: datetime, symbol: str) -> floa
     if not prior:
         return None
     return prior[-1].close
+
 
 @app.command("one-shot")
 def one_shot(  # noqa: B008
@@ -77,16 +84,27 @@ def one_shot(  # noqa: B008
     ts = _now()
     tag = tag or f"oneshot_{symbol}_{int(ts.timestamp())}"
     order = NewOrder(
-        symbol=symbol, side=side.value, qty=qty, limit=limit,
-        tif=tif.value, tag=tag, ts=ts
+        symbol=symbol, side=side.value, qty=qty, limit=limit, tif=tif.value, tag=tag, ts=ts
     )
     arrival = _arrival_from_bars(bars_path, ts, symbol)
     ledger_day = Path(out_dir) / ts.date().isoformat()
     ledger_path = ledger_day / "ledger.parquet"
-    append_ledger(ledger_path, [{
-        "ts": ts, "kind": "INTENT", "tag": tag, "symbol": symbol,
-        "side": side.value, "qty": qty, "limit": limit, "tif": tif.value, "arrival": arrival
-    }])
+    append_ledger(
+        ledger_path,
+        [
+            {
+                "ts": ts,
+                "kind": "INTENT",
+                "tag": tag,
+                "symbol": symbol,
+                "side": side.value,
+                "qty": qty,
+                "limit": limit,
+                "tif": tif.value,
+                "arrival": arrival,
+            }
+        ],
+    )
 
     # Place
     host = _env("IB_GATEWAY_HOST", "127.0.0.1")
@@ -95,14 +113,11 @@ def one_shot(  # noqa: B008
     ib = IBKRAdapter(host, port, cid)
     ib.connect()
     state = ExecState(
-        tag=tag, symbol=symbol, side=side.value, qty=qty,
-        remaining=qty, created_ts=ts
+        tag=tag, symbol=symbol, side=side.value, qty=qty, remaining=qty, created_ts=ts
     )
     res = ib.place(order)
     state.on_ack(res.ack_ts)
-    append_ledger(ledger_path, [{
-        "ts": ts, "event_ts": res.ack_ts, "kind": "ACK", "tag": tag
-    }])
+    append_ledger(ledger_path, [{"ts": ts, "event_ts": res.ack_ts, "kind": "ACK", "tag": tag}])
 
     # Wait for fills briefly, then cancel if needed
     prev_n = 0
@@ -122,10 +137,21 @@ def one_shot(  # noqa: B008
                 px = float(getattr(f.execution, "price", 0.0) or getattr(f, "price", 0.0) or 0.0)
                 if q > 0 and px > 0:
                     state.on_partial(_now(), px, q)
-                    append_ledger(ledger_path, [{
-                        "ts": ts, "event_ts": _now(), "kind": "FILL", "tag": tag,
-                        "fill_qty": q, "avg_px": state.avg_fill_px
-                    }])
+                    append_ledger(
+                        ledger_path,
+                        [
+                            {
+                                "ts": ts,
+                                "event_ts": _now(),
+                                "kind": "FILL",
+                                "tag": tag,
+                                "fill_qty": q,
+                                "avg_px": state.avg_fill_px,
+                                "symbol": symbol,
+                                "side": side.value,
+                            }
+                        ],
+                    )
             prev_n = len(fills)
 
         if trade.isDone():
@@ -143,15 +169,24 @@ def one_shot(  # noqa: B008
     # TCA (if arrival present and filled)
     if state.fill_qty > 0 and arrival:
         tca = TCA(arrival=arrival, fills_wavg=state.avg_fill_px, side=side.value)
-        append_ledger(ledger_path, [{
-            "ts": ts, "event_ts": _now(), "kind": "PNL_SNAPSHOT",
-            "tag": tag, "shortfall_bps": tca.shortfall_bps
-        }])
+        append_ledger(
+            ledger_path,
+            [
+                {
+                    "ts": ts,
+                    "event_ts": _now(),
+                    "kind": "PNL_SNAPSHOT",
+                    "tag": tag,
+                    "shortfall_bps": tca.shortfall_bps,
+                }
+            ],
+        )
 
     typer.echo(
         f"[one-shot] tag={tag} state={state.state} fill_qty={state.fill_qty} "
         f"avg_px={state.avg_fill_px or '—'} arrival={arrival or '—'}"
     )
+
 
 @app.command("sanity-cancel")
 def sanity_cancel(
@@ -165,15 +200,24 @@ def sanity_cancel(
     ts = _now()
     tag = f"sanity_{symbol}_{int(ts.timestamp())}"
     order = NewOrder(
-        symbol=symbol, side=side.value, qty=qty, limit=limit,
-        tif="DAY", tag=tag, ts=ts
+        symbol=symbol, side=side.value, qty=qty, limit=limit, tif="DAY", tag=tag, ts=ts
     )
     ledger_day = Path(out_dir) / ts.date().isoformat()
     ledger_path = ledger_day / "ledger.parquet"
-    append_ledger(ledger_path, [{
-        "ts": ts, "kind": "INTENT", "tag": tag, "symbol": symbol,
-        "side": side.value, "qty": qty, "limit": limit
-    }])
+    append_ledger(
+        ledger_path,
+        [
+            {
+                "ts": ts,
+                "kind": "INTENT",
+                "tag": tag,
+                "symbol": symbol,
+                "side": side.value,
+                "qty": qty,
+                "limit": limit,
+            }
+        ],
+    )
     host = _env("IB_GATEWAY_HOST", "127.0.0.1")
     port = int(_env("IB_GATEWAY_PORT", "7497"))
     cid = int(_env("IB_CLIENT_ID", "7"))

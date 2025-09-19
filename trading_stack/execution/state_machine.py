@@ -6,6 +6,7 @@ from typing import Literal
 
 State = Literal["NEW", "ACK", "REJ", "PARTIAL", "FILL", "CANCEL"]
 
+
 @dataclass
 class ExecState:
     tag: str
@@ -37,9 +38,9 @@ class ExecState:
             self.fill_qty += qty
             self.remaining = max(0.0, self.qty - self.fill_qty)
             # rolling VWAP
-            self.avg_fill_px = (
-                (self.avg_fill_px * (self.fill_qty - qty)) + px * qty
-            ) / max(self.fill_qty, 1e-9)
+            self.avg_fill_px = ((self.avg_fill_px * (self.fill_qty - qty)) + px * qty) / max(
+                self.fill_qty, 1e-9
+            )
             if self.remaining == 0:
                 self.state = "FILL"
 

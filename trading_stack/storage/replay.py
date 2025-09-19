@@ -20,12 +20,12 @@ def main() -> None:
         return
 
     # Assume ts is UTC ISO or epoch ns convertible
-    df['ts'] = pd.to_datetime(df['ts'], utc=True)
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
 
-    t0 = df['ts'].iloc[0]
+    t0 = df["ts"].iloc[0]
     wall0 = time.monotonic()
     for _, row in df.iterrows():
-        ts = row['ts']
+        ts = row["ts"]
         # pacing
         delta = (ts - t0).total_seconds() / args.speed
         now = time.monotonic() - wall0
@@ -33,6 +33,7 @@ def main() -> None:
             time.sleep(delta - now)
         trade = MarketTrade.model_validate(row.to_dict())
         print(f"{trade.ts.isoformat()} {trade.symbol} {trade.size}@{trade.price}")
+
 
 if __name__ == "__main__":
     main()

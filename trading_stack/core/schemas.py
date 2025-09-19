@@ -15,6 +15,7 @@ class MarketTrade(BaseModel):
     source: str | None = None
     ingest_ts: datetime | None = None
 
+
 class MarketQuote(BaseModel):
     ts: datetime
     symbol: str
@@ -23,6 +24,7 @@ class MarketQuote(BaseModel):
     bid_size: int
     ask_size: int
     source: str | None = None
+
 
 class Bar1s(BaseModel):
     ts: datetime
@@ -33,34 +35,39 @@ class Bar1s(BaseModel):
     close: float
     volume: int
 
+
 class NewOrder(BaseModel):
     symbol: str
-    side: Literal["BUY","SELL"]
+    side: Literal["BUY", "SELL"]
     qty: float
-    tif: Literal["IOC","DAY","GTC"] = "DAY"
+    tif: Literal["IOC", "DAY", "GTC"] = "DAY"
     limit: float | None = None
     tag: str | None = None
     ts: datetime
 
+
 class OrderState(BaseModel):
     broker_order_id: str | None = None
-    state: Literal["NEW","ACK","REJ","PARTIAL","FILL","CANCEL"]
+    state: Literal["NEW", "ACK", "REJ", "PARTIAL", "FILL", "CANCEL"]
     reason: str | None = None
     ts: datetime
+
 
 class Fill(BaseModel):
     ts: datetime
     symbol: str
-    side: Literal["BUY","SELL"]
+    side: Literal["BUY", "SELL"]
     qty: float
     price: float
     fee: float = 0.0
     order_tag: str | None = None
 
+
 class LedgerEntry(BaseModel):
     ts: datetime
-    kind: Literal["INTENT","ACK","FILL","CANCEL","REJ","PNL_SNAPSHOT"]
+    kind: Literal["INTENT", "ACK", "FILL", "CANCEL", "REJ", "PNL_SNAPSHOT"]
     data: dict
+
 
 class LLMParamProposal(BaseModel):
     ts: datetime

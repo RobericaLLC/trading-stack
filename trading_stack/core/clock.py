@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 class TradingClock:
     """Monotonic trading clock keyed to feed timestamps or wall clock as fallback."""
+
     def __init__(self) -> None:
         self._last_feed_ts_ns: int | None = None
         self._mono0 = time.monotonic_ns()

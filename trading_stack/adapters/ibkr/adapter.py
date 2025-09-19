@@ -16,6 +16,7 @@ class PlaceResult:
     trade: Trade
     ack_ts: datetime
 
+
 class IBKRAdapter:
     def __init__(self, host: str = "127.0.0.1", port: int = 7497, client_id: int = 7) -> None:
         if IB is None:

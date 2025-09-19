@@ -28,6 +28,7 @@ def aggregate_trades_to_1s_bars(trades: Iterable[MarketTrade], symbol: str) -> l
     bars: list[Bar1s] = []
     for key, v in sorted(buckets.items()):
         from datetime import datetime
+
         ts = datetime.fromisoformat(key.replace("Z", "+00:00"))
         bars.append(
             Bar1s(

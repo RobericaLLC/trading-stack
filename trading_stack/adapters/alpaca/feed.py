@@ -16,8 +16,10 @@ from trading_stack.core.schemas import MarketTrade
 # https://docs.alpaca.markets/docs/real-time-stock-pricing-data
 BASE = "wss://stream.data.alpaca.markets"
 
+
 def _iso_to_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(UTC)
+
 
 async def _run_ws(
     symbol: str, minutes: int, feed_path: str, key: str, secret: str
@@ -62,6 +64,7 @@ async def _run_ws(
                     )
                 # ignore quotes/bars/status/control in this adapter
     return trades
+
 
 def capture_trades(symbol: str, minutes: int, feed: str = "v2/iex") -> list[MarketTrade]:
     key = os.environ.get("ALPACA_API_KEY_ID")
