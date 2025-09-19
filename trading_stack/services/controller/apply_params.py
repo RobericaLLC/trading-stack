@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,33 +42,16 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
     return len(recent) >= 30  # ~≥50% of seconds got bars in last minute on IEX; tune as needed
 
 def _pnl_freeze_ok(
-    ledger_root: Path,
-    symbol: str,
-    window_min: int = 30,
-    freeze_dd_pct: float = -0.5,
-    equity_usd: float = 100000.0,  # default equity for drawdown calc
+    ledger_root: Path, symbol: str, window_min: int = 30, freeze_dd_pct: float = -0.5
 ) -> bool:
-    # Check realized P&L drawdown from ledger fills
+    """Return True if NOT frozen (i.e., drawdown above threshold)."""
     today = _now().date().isoformat()
     ledger_path = Path(ledger_root) / today / "ledger.parquet"
-    
-    try:
-        if not ledger_path.exists():
-            return True  # No ledger = no freeze
-            
-        # Compute realized P&L time series
-        pnl_ts = realized_pnl_timeseries(ledger_path, symbol)
-        if pnl_ts.empty:
-            return True  # No fills = no freeze
-            
-        # Calculate drawdown percentage
-        dd_pct = drawdown_pct_last_window(pnl_ts, equity_usd, window_min)
-        
-        # Freeze if drawdown exceeds threshold (dd_pct is negative for losses)
-        return dd_pct > freeze_dd_pct  # e.g., -0.3% > -0.5% = True (OK)
-        
-    except Exception:
-        return True  # On error, don't freeze
+    ts = realized_pnl_timeseries(ledger_path, symbol)
+    equity = float(os.environ.get("EQUITY_USD", "30000"))
+    dd_pct = drawdown_pct_last_window(ts, equity_usd=equity, window_min=window_min)
+    # Freeze if drawdown ≤ threshold (e.g., ≤ -0.5%)
+    return dd_pct > float(freeze_dd_pct)
 
 def _rate_limiter_ok(
     applied_path: Path, max_accept_rate: float = 0.30, window_min: int = 15
