@@ -23,7 +23,7 @@ Write-Host "`nStarting services..." -ForegroundColor Cyan
 Write-Host "`n1. Starting Feed Service (feedd)..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", @"
 Write-Host 'FEED SERVICE' -ForegroundColor Green
-feedd live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out_dir data/live
+python -m trading_stack.services.feedd.main live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out-dir data/live
 "@
 
 Start-Sleep -Seconds 2
@@ -32,7 +32,7 @@ Start-Sleep -Seconds 2
 Write-Host "2. Starting Advisor Service (LLM proposals)..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", @"
 Write-Host 'ADVISOR SERVICE' -ForegroundColor Green
-python -m trading_stack.services.advisor.main --symbol SPY --bars_dir data/live --out_root data/llm --provider rules --interval_sec 5 --budget_usd 10
+python -m trading_stack.services.advisor.main --symbol SPY --bars-dir data/live --out-root data/llm --provider rules --interval-sec 5 --budget-usd 10
 "@
 
 Start-Sleep -Seconds 2
@@ -41,7 +41,7 @@ Start-Sleep -Seconds 2
 Write-Host "3. Starting Controller (Policy Enforcer)..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", @"
 Write-Host 'CONTROLLER SERVICE - POLICY ENFORCER' -ForegroundColor Red
-python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root data/llm --live_root data/live --ledger_root data/exec --params_root data/params --interval_sec 5
+python -m trading_stack.services.controller.apply_params --symbol SPY --llm-root data/llm --live-root data/live --ledger-root data/exec --params-root data/params --interval-sec 5
 "@
 
 Start-Sleep -Seconds 2
@@ -50,7 +50,7 @@ Start-Sleep -Seconds 2
 Write-Host "4. Starting Engine (with hot-reload)..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", @"
 Write-Host 'ENGINE SERVICE - HOT RELOAD ENABLED' -ForegroundColor Blue
-python -m trading_stack.services.engined.live --symbol SPY --bars_dir data/live --queue data/queue.db --params_root data/params
+python -m trading_stack.services.engined.live --symbol SPY --bars-dir data/live --queue data/queue.db --params-root data/params
 "@
 
 Start-Sleep -Seconds 2
@@ -59,7 +59,7 @@ Start-Sleep -Seconds 2
 Write-Host "5. Starting Execution Worker..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", @"
 Write-Host 'EXECUTION WORKER' -ForegroundColor Magenta
-python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_root data/exec --poll_sec 0.25
+python -m trading_stack.services.execd.worker --queue data/queue.db --ledger-root data/exec --poll-sec 0.25
 "@
 
 Write-Host "`nAll services started!" -ForegroundColor Green

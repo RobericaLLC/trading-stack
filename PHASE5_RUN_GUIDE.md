@@ -8,19 +8,19 @@ Phase 5 enables live trading with LLM-generated parameter adjustments under stri
 ### 1. Feed Service (feedd)
 Collects live market data from Alpaca IEX feed.
 ```powershell
-feedd live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out_dir data/live
+python -m trading_stack.services.feedd.main live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out-dir data/live
 ```
 
 ### 2. Advisor Service (LLM Proposals)
 Generates trading parameter proposals using the rules-based provider.
 ```powershell
-python -m trading_stack.services.advisor.main --symbol SPY --bars_dir data/live --out_root data/llm --provider rules --interval_sec 5 --budget_usd 10
+python -m trading_stack.services.advisor.main --symbol SPY --bars-dir data/live --out-root data/llm --provider rules --interval-sec 5 --budget-usd 10
 ```
 
 ### 3. Controller Service (Policy Enforcer) ⭐ NEW
 Applies LLM proposals under strict policy constraints.
 ```powershell
-python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root data/llm --live_root data/live --ledger_root data/exec --params_root data/params --interval_sec 5
+python -m trading_stack.services.controller.apply_params --symbol SPY --llm-root data/llm --live-root data/live --ledger-root data/exec --params-root data/params --interval-sec 5
 ```
 
 **Policy Constraints:**
@@ -35,13 +35,13 @@ python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root
 ### 4. Engine Service (with Hot-Reload) ⭐ UPDATED
 Trading engine that hot-reloads parameters from runtime JSON.
 ```powershell
-python -m trading_stack.services.engined.live --symbol SPY --bars_dir data/live --queue data/queue.db --params_root data/params
+python -m trading_stack.services.engined.live --symbol SPY --bars-dir data/live --queue data/queue.db --params-root data/params
 ```
 
 ### 5. Execution Worker
 Processes order intents from the queue.
 ```powershell
-python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_root data/exec --poll_sec 0.25
+python -m trading_stack.services.execd.worker --queue data/queue.db --ledger-root data/exec --poll-sec 0.25
 ```
 
 ## Quick Start

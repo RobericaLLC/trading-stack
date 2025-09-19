@@ -20,31 +20,31 @@ echo Starting services...
 REM Start Feed Service
 echo.
 echo 1. Starting Feed Service (feedd)...
-start "FEED SERVICE" cmd /k "feedd live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out_dir data/live"
+start "FEED SERVICE" cmd /k "python -m trading_stack.services.feedd.main live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out-dir data/live"
 
 timeout /t 2 /nobreak > nul
 
 REM Start Advisor Service (LLM proposals)
 echo 2. Starting Advisor Service (LLM proposals)...
-start "ADVISOR SERVICE" cmd /k "python -m trading_stack.services.advisor.main --symbol SPY --bars_dir data/live --out_root data/llm --provider rules --interval_sec 5 --budget_usd 10"
+start "ADVISOR SERVICE" cmd /k "python -m trading_stack.services.advisor.main --symbol SPY --bars-dir data/live --out-root data/llm --provider rules --interval-sec 5 --budget-usd 10"
 
 timeout /t 2 /nobreak > nul
 
 REM Start Controller (Policy Enforcer) - NEW in Phase 5
 echo 3. Starting Controller (Policy Enforcer)...
-start "CONTROLLER - POLICY ENFORCER" cmd /k "python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root data/llm --live_root data/live --ledger_root data/exec --params_root data/params --interval_sec 5"
+start "CONTROLLER - POLICY ENFORCER" cmd /k "python -m trading_stack.services.controller.apply_params --symbol SPY --llm-root data/llm --live-root data/live --ledger-root data/exec --params-root data/params --interval-sec 5"
 
 timeout /t 2 /nobreak > nul
 
 REM Start Engine with hot-reload - UPDATED in Phase 5
 echo 4. Starting Engine (with hot-reload)...
-start "ENGINE - HOT RELOAD" cmd /k "python -m trading_stack.services.engined.live --symbol SPY --bars_dir data/live --queue data/queue.db --params_root data/params"
+start "ENGINE - HOT RELOAD" cmd /k "python -m trading_stack.services.engined.live --symbol SPY --bars-dir data/live --queue data/queue.db --params-root data/params"
 
 timeout /t 2 /nobreak > nul
 
 REM Start Execution Worker
 echo 5. Starting Execution Worker...
-start "EXECUTION WORKER" cmd /k "python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_root data/exec --poll_sec 0.25"
+start "EXECUTION WORKER" cmd /k "python -m trading_stack.services.execd.worker --queue data/queue.db --ledger-root data/exec --poll-sec 0.25"
 
 echo.
 echo All services started!
