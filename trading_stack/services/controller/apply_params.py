@@ -58,20 +58,24 @@ def _pnl_freeze_ok(
     return dd_pct > float(freeze_dd_pct)
 
 def _rate_limiter_ok(
-    applied_path: Path, max_accept_rate: float = 0.30, window_min: int = 15
+    applied_path: Path, proposals_path: Path, max_accept_rate: float = 0.30, window_min: int = 15
 ) -> bool:
-    if not applied_path.exists():
-        return True
-    df = pd.read_parquet(applied_path)
-    if df.empty:
-        return True
-    df["ts"] = pd.to_datetime(df["ts"], utc=True)
     cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=window_min)
-    df = df[df["ts"] >= cut]
-    seen = int(df["seen"].sum()) if "seen" in df.columns else max(len(df)*3, 1)  # fallback
-    applied = len(df)
-    rate = applied / max(seen, 1)
-    return rate <= max_accept_rate
+    applied = 0
+    if applied_path.exists():
+        dfa = pd.read_parquet(applied_path)
+        if not dfa.empty:
+            dfa["ts"] = pd.to_datetime(dfa["ts"], utc=True)
+            applied = int(dfa[(dfa["ts"] >= cut) & (dfa["delta_bps"].abs() > 0)].shape[0])
+    seen = 0
+    if proposals_path.exists():
+        dfp = pd.read_parquet(proposals_path)
+        if not dfp.empty:
+            dfp["ts"] = pd.to_datetime(dfp["ts"], utc=True)
+            seen = int(dfp[dfp["ts"] >= cut].shape[0])
+    if seen == 0:
+        return True
+    return (applied / seen) <= max_accept_rate
 
 @app.command()
 def main(
@@ -96,7 +100,9 @@ def main(
         # Guards
         healthy = _feed_health_ok(Path(live_root), symbol)
         not_frozen = _pnl_freeze_ok(Path(ledger_root), symbol)
-        rate_ok = _rate_limiter_ok(applied_path, max_accept_rate=0.30, window_min=15)
+        rate_ok = _rate_limiter_ok(
+            applied_path, proposals_path, max_accept_rate=0.30, window_min=15
+        )
         freeze = not (healthy and not_frozen and rate_ok)
 
         df = _read_latest_proposals(proposals_path, lookback_min=15)
