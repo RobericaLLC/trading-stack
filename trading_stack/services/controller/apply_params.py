@@ -27,19 +27,23 @@ def _read_latest_proposals(proposals_path: Path, lookback_min: int = 15) -> pd.D
     return df[df["ts"] >= cut]
 
 def _feed_health_ok(live_root: Path, symbol: str) -> bool:
-    # Lightweight: require bars for last minute.
-    day_dirs = [p for p in live_root.glob("*") if p.is_dir()]
-    if not day_dirs:
+    days = [p for p in live_root.glob("*") if p.is_dir()]
+    if not days:
         return False
-    bars_path = day_dirs[-1] / f"bars1s_{symbol}.parquet"
+    bars_path = days[-1] / f"bars1s_{symbol}.parquet"
     if not bars_path.exists():
         return False
     df = pd.read_parquet(bars_path)
     if df.empty:
         return False
     df["ts"] = pd.to_datetime(df["ts"], utc=True).sort_values()
-    recent = df[df["ts"] >= (pd.Timestamp.now(tz="UTC") - pd.Timedelta(seconds=60))]
-    return len(recent) >= 30  # ~≥50% of seconds got bars in last minute on IEX; tune as needed
+    now = pd.Timestamp.now(tz="UTC")
+    last_ts = df["ts"].iloc[-1]
+    age_s = (now - last_ts).total_seconds()
+    last_min = df[df["ts"] >= (now - pd.Timedelta(seconds=60))]
+    coverage = len(last_min) / 60.0  # seconds with bars
+    # IEX reality: accept if age ≤ 60s and ≥ ~50% of seconds have bars
+    return (age_s <= 60.0) and (coverage >= 0.5)
 
 def _pnl_freeze_ok(
     ledger_root: Path, symbol: str, window_min: int = 30, freeze_dd_pct: float = -0.5
