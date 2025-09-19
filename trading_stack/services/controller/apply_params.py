@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import typer
 
-from trading_stack.accounting.positions import write_snapshot  # for realized pnl freeze
+from trading_stack.accounting.realized import drawdown_pct_last_window, realized_pnl_timeseries
 from trading_stack.params.runtime import RuntimeParams, append_applied
 
 app = typer.Typer(help="Apply LLM proposals to runtime params with strict guardrails.")
@@ -42,27 +42,32 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
 
 def _pnl_freeze_ok(
     ledger_root: Path,
-    symbol: str,  # noqa: ARG001
-    window_min: int = 30,  # noqa: ARG001
-    freeze_dd_pct: float = -0.5,  # noqa: ARG001
+    symbol: str,
+    window_min: int = 30,
+    freeze_dd_pct: float = -0.5,
+    equity_usd: float = 100000.0,  # default equity for drawdown calc
 ) -> bool:
-    # Build positions snapshot and infer realized pnl change in the last window;
-    # if not available, don't freeze.
+    # Check realized P&L drawdown from ledger fills
     today = _now().date().isoformat()
-    # led = Path(ledger_root) / today / "ledger.parquet"  # unused for now
-    out = Path("data/accounting") / today / "positions.parquet"
+    ledger_path = Path(ledger_root) / today / "ledger.parquet"
+    
     try:
-        write_snapshot(ledger_root, "data/accounting")  # writes today snapshot
-        df = pd.read_parquet(out)
-        if df.empty:
-            return True
-        if "realized_pnl" not in df.columns:
-            return True
-        # We don't have timestamped pnl per row; use ledger delta as a proxy—
-        # skip freeze if unknown.
-        return True
+        if not ledger_path.exists():
+            return True  # No ledger = no freeze
+            
+        # Compute realized P&L time series
+        pnl_ts = realized_pnl_timeseries(ledger_path, symbol)
+        if pnl_ts.empty:
+            return True  # No fills = no freeze
+            
+        # Calculate drawdown percentage
+        dd_pct = drawdown_pct_last_window(pnl_ts, equity_usd, window_min)
+        
+        # Freeze if drawdown exceeds threshold (dd_pct is negative for losses)
+        return dd_pct > freeze_dd_pct  # e.g., -0.3% > -0.5% = True (OK)
+        
     except Exception:
-        return True
+        return True  # On error, don't freeze
 
 def _rate_limiter_ok(
     applied_path: Path, max_accept_rate: float = 0.30, window_min: int = 15
