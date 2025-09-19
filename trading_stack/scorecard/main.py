@@ -325,27 +325,25 @@ def main(
     if latest_llm:
         props_path = latest_llm / f"proposals_{symbol}.parquet"
         ap_path = latest_llm / f"applied_{symbol}.parquet"
+        cut15 = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=15)
+        
+        # Count proposals seen
+        seen15 = 0
         if props_path.exists():
             dfp = pd.read_parquet(props_path)
             dfp["ts"] = pd.to_datetime(dfp["ts"], utc=True)
-            cut15 = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=15)
             seen15 = dfp[dfp["ts"] >= cut15].shape[0]
-            table.add_row("llm_proposals_seen_15m", str(seen15), _ok(seen15 >= 6))
-        else:
-            table.add_row("llm_proposals_seen_15m", "0", _ok(False))
+        table.add_row("llm_proposals_seen_15m", str(seen15), _ok(seen15 >= 6))
 
+        # Count applied and calculate rate
         if ap_path.exists():
             dfa = pd.read_parquet(ap_path)
             if not dfa.empty:
                 dfa["ts"] = pd.to_datetime(dfa["ts"], utc=True)
                 a15 = dfa[dfa["ts"] >= cut15]
                 applied15 = a15[a15["delta_bps"].abs() > 0].shape[0]
-                seen_est = (
-                    int(a15["seen"].max())
-                    if "seen" in a15.columns and not a15["seen"].isna().all()
-                    else max(applied15 * 3, 1)
-                )
-                rate = applied15 / max(seen_est, 1)
+                # Calculate rate using actual proposal count
+                rate = applied15 / seen15 if seen15 > 0 else 0.0
                 table.add_row("llm_proposals_applied_15m", str(applied15), _ok(applied15 <= 2))
                 table.add_row("llm_accept_rate_15m", f"{rate:.0%}", _ok(rate <= 0.30))
                 # bounds check
