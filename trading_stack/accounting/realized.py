@@ -123,7 +123,7 @@ def drawdown_pct_last_window(ts_df: pd.DataFrame, equity_usd: float, window_min:
     if equity_usd <= 0 or ts_df is None or ts_df.empty:
         return 0.0
     ts = ts_df.sort_values("event_ts").copy()
-    cut = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=window_min)
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=window_min)
     ts = ts[ts["event_ts"] >= cut]
     if ts.empty:
         return 0.0

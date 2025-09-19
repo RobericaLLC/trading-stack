@@ -23,7 +23,7 @@ def _read_latest_proposals(proposals_path: Path, lookback_min: int = 15) -> pd.D
     if df.empty:
         return df
     df["ts"] = pd.to_datetime(df["ts"], utc=True)
-    cut = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=lookback_min)
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=lookback_min)
     return df[df["ts"] >= cut]
 
 def _feed_health_ok(live_root: Path, symbol: str) -> bool:
@@ -38,7 +38,7 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
     if df.empty:
         return False
     df["ts"] = pd.to_datetime(df["ts"], utc=True).sort_values()
-    recent = df[df["ts"] >= (pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(seconds=60))]
+    recent = df[df["ts"] >= (pd.Timestamp.now(tz="UTC") - pd.Timedelta(seconds=60))]
     return len(recent) >= 30  # ~≥50% of seconds got bars in last minute on IEX; tune as needed
 
 def _pnl_freeze_ok(
@@ -62,7 +62,7 @@ def _rate_limiter_ok(
     if df.empty:
         return True
     df["ts"] = pd.to_datetime(df["ts"], utc=True)
-    cut = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(minutes=window_min)
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=window_min)
     df = df[df["ts"] >= cut]
     seen = int(df["seen"].sum()) if "seen" in df.columns else max(len(df)*3, 1)  # fallback
     applied = len(df)
