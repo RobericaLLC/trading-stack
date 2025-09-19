@@ -128,12 +128,17 @@ def main(
             # Place order via IBKR
             try:
                 res = ib.place(order)
+                order_id = (
+                    res.trade.order.orderId 
+                    if hasattr(res.trade.order, "orderId") 
+                    else None
+                )
                 append_ledger(ledger_path, [{
                     "ts": ts,
                     "event_ts": res.ack_ts,
                     "kind": "ACK",
                     "tag": tag,
-                    "order_id": res.trade.order.orderId if hasattr(res.trade.order, "orderId") else None
+                    "order_id": order_id
                 }])
                 typer.echo(f"Order placed: {tag} -> trade={res.trade}")
                 ack(con, row["id"])
