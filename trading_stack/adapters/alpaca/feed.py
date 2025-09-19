@@ -24,7 +24,8 @@ async def _run_ws(
 ) -> list[MarketTrade]:
     assert websockets is not None, "websockets not installed. `pip install websockets`"
     uri = f"{BASE}/{feed_path}"
-    end_at = datetime.now(UTC) + timedelta(minutes=minutes)
+    # If minutes == 0, run continuously
+    end_at = None if minutes == 0 else datetime.now(UTC) + timedelta(minutes=minutes)
     trades: list[MarketTrade] = []
     async with websockets.connect(uri, ping_interval=15, ping_timeout=10) as ws:
         # Authenticate via message: {"action":"auth","key":"...","secret":"..."}
@@ -33,7 +34,7 @@ async def _run_ws(
         # Subscribe to trades channel
         await ws.send(json.dumps({"action": "subscribe", "trades": [symbol]}))
 
-        while datetime.now(UTC) < end_at:
+        while end_at is None or datetime.now(UTC) < end_at:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
             except TimeoutError:

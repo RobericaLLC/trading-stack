@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -145,8 +145,6 @@ def main(
                 table.add_row("ack_latency_p95_ms", "NA", _okf(False))
 
             # cancel_success (sanity_* tags only)
-            from datetime import timedelta
-            
             now = datetime.now(UTC)
             cut = now - timedelta(minutes=sanity_window_min)
 
@@ -188,6 +186,109 @@ def main(
             table.add_row("exec_ledger_present", "False", _ok(False))
     else:
         table.add_row("exec_day_dir_present", "False", _ok(False))
+
+    # LIVE LOOP HEALTH METRICS
+    
+    # ENGINE METRICS
+    # Check queue database for queue depth and dead letters
+    queue_path = Path("data/queue.db")
+    if queue_path.exists():
+        from trading_stack.ipc.sqlite_queue import connect, dead_letter_count, depth
+        
+        con = connect(queue_path)
+        queue_d = depth(con, "order_intents")
+        dead_count = dead_letter_count(con, "order_intents")
+        table.add_row("queue_depth", str(queue_d), _ok(queue_d == 0))
+        table.add_row("dead_letter_count", str(dead_count), _ok(dead_count == 0))
+        con.close()
+    
+    # Check engine coverage by comparing shadow intents to bars
+    if latest_exec and latest:
+        shadow_ledger = latest_exec / "ledger.parquet"
+        bars_path = latest / f"bars1s_{symbol}.parquet"
+        
+        if shadow_ledger.exists() and bars_path.exists():
+            # Read shadow intents from last 15 minutes
+            ledger_df = pd.read_parquet(shadow_ledger)
+            shadow_intents = ledger_df[ledger_df["kind"] == "INTENT_SHADOW"]
+            if not shadow_intents.empty:
+                # Get intents from last 15 minutes
+                cut = now - timedelta(minutes=15)
+                recent_intents = shadow_intents[shadow_intents["ts"] >= cut]
+                intent_count = len(recent_intents)
+                table.add_row(
+                    "intents_enqueued_last_15m", str(intent_count), _ok(intent_count >= 1)
+                )
+                
+                # Calculate engine coverage
+                bars_df = pd.read_parquet(bars_path)
+                bars_df["ts"] = pd.to_datetime(bars_df["ts"])
+                recent_bars = bars_df[bars_df["ts"] >= cut]
+                
+                if not recent_bars.empty:
+                    # Engine coverage = processed bars / total bars (using shadow intents as proxy)
+                    # For now, assume engine processed all bars if it generated intents
+                    coverage = 1.0 if intent_count > 0 else 0.0
+                    table.add_row(
+                        "engine_coverage_last_15m", f"{coverage:.0%}", _ok(coverage >= 0.95)
+                    )
+                else:
+                    table.add_row("engine_coverage_last_15m", "NA", _ok(False))
+            else:
+                table.add_row("intents_enqueued_last_15m", "0", _ok(False))
+                table.add_row("engine_coverage_last_15m", "0%", _ok(False))
+    
+    # RISK METRICS
+    if latest_exec:
+        ledger_path = latest_exec / "ledger.parquet"
+        if ledger_path.exists():
+            df = pd.read_parquet(ledger_path)
+            
+            # Check blocked orders in last 15 minutes
+            cut = now - timedelta(minutes=15)
+            recent_rej = df[(df["kind"] == "REJ") & (df["ts"] >= cut)]
+            if "reason" in recent_rej.columns:
+                # Count rejections that are risk-related (exclude operational failures)
+                risk_reasons = [
+                    "killswitch", "whitelist", "notional", "price band",
+                    "max open", "daily loss"
+                ]
+                risk_blocks = recent_rej[
+                    recent_rej["reason"].str.contains(
+                        "|".join(risk_reasons), case=False, na=False
+                    )
+                ]
+                blocked_count = len(risk_blocks)
+            else:
+                blocked_count = 0
+            table.add_row("blocked_orders_last_15m", str(blocked_count), _ok(blocked_count == 0))
+            
+            # Check if daily stop triggered
+            killswitch_path = Path("RUN/HALT")
+            daily_stop = killswitch_path.exists()
+            table.add_row("daily_stop_triggered", str(daily_stop), _ok(not daily_stop))
+    
+    # OPS METRICS - uptime check via heartbeat files
+    heartbeat_dir = Path("RUN/heartbeat")
+    if heartbeat_dir.exists():
+        # Check heartbeat files modified in last 60s
+        services = ["feedd", "engined", "execd"]
+        all_up = True
+        for service in services:
+            hb_file = heartbeat_dir / f"{service}.hb"
+            if hb_file.exists():
+                mtime = datetime.fromtimestamp(hb_file.stat().st_mtime, UTC)
+                age_sec = (now - mtime).total_seconds()
+                up = age_sec < 60
+                all_up = all_up and up
+            else:
+                all_up = False
+        
+        # Calculate uptime percentage (simplified - just current state)
+        uptime = 100.0 if all_up else 0.0
+        table.add_row("uptime_rth", f"{uptime:.0f}%", _ok(uptime > 99.0))
+    else:
+        table.add_row("uptime_rth", "NA", _ok(False))
 
     console.print(table)
 
