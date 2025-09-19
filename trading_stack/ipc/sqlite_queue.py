@@ -41,7 +41,9 @@ def enqueue(con: sqlite3.Connection, topic: str, tag: str, payload: dict) -> Non
     con.commit()
 
 
-def reserve(con: sqlite3.Connection, topic: str, visibility_timeout_sec: int = 10, max_attempts: int = 10) -> dict | None:
+def reserve(
+    con: sqlite3.Connection, topic: str, visibility_timeout_sec: int = 10, max_attempts: int = 10
+) -> dict | None:
     cutoff = (datetime.now(UTC) - timedelta(seconds=visibility_timeout_sec)).isoformat()
     cur = con.execute(
         """
