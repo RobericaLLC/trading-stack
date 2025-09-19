@@ -27,7 +27,10 @@ python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root
 - Parameter bounds: 0.3 ≤ threshold_bps ≤ 3.0
 - Delta cap: ≤ 0.2 bps per decision (5s cadence)
 - Rate limit: ≤ 30% proposals accepted in 15 min window
-- Freeze conditions: feed health issues, P&L drawdown
+- Freeze conditions: 
+  - Feed health issues (missing/stale bars)
+  - P&L drawdown ≤ -0.5% of equity in 30 min window
+  - Equity set via $env:EQUITY_USD (default: 30000)
 
 ### 4. Engine Service (with Hot-Reload) ⭐ UPDATED
 Trading engine that hot-reloads parameters from runtime JSON.
@@ -45,11 +48,19 @@ python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_roo
 
 ### Automated Start (Windows PowerShell)
 ```powershell
+# Set your paper account equity (used for P&L drawdown freeze)
+$env:EQUITY_USD = "30000"
+
 ./run_phase5.ps1
 ```
 
 ### Manual Start
-Start each service in a separate terminal in the order listed above.
+First set environment variables:
+```powershell
+$env:EXEC_ENV = "paper"
+$env:EQUITY_USD = "30000"  # Your paper account equity
+```
+Then start each service in a separate terminal in the order listed above.
 
 ## Monitoring
 

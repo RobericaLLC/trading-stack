@@ -6,6 +6,7 @@ Write-Host "=============================================" -ForegroundColor Gree
 
 # Set environment for paper trading
 $env:EXEC_ENV = "paper"
+$env:EQUITY_USD = "30000"  # Set your paper account equity for P&L drawdown freeze
 
 # Create necessary directories
 $dirs = @("data/live", "data/llm", "data/exec", "data/params", "RUN/heartbeat")

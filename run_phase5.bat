@@ -7,6 +7,7 @@ echo =============================================
 
 REM Set environment for paper trading
 set EXEC_ENV=paper
+set EQUITY_USD=30000
 
 REM Create necessary directories
 for %%d in (data\live data\llm data\exec data\params RUN\heartbeat) do (
