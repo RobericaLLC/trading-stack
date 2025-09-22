@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from trading_stack.accounting.realized import drawdown_pct_last_window, realized_pnl_timeseries
 from trading_stack.core.schemas import Bar1s
 from trading_stack.storage.parquet_store import read_events, write_events
 
@@ -185,10 +186,29 @@ def main(
                 table.add_row("shortfall_median_bps", f"{med:.1f}", _okf(med < 4.0))
             else:
                 table.add_row("shortfall_median_bps", "NA", _okf(False))
+            
+            # Ledger integrity & realized P&L checks
+            tsdf = realized_pnl_timeseries(ledger_path, symbol)
+            eq = float(os.environ.get("EQUITY_USD", "30000"))
+            points_30m = 0
+            if not tsdf.empty:
+                tsdf = tsdf.sort_values("event_ts")
+                cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=30)
+                points_30m = int(tsdf[tsdf["event_ts"] >= cut].shape[0])
+            table.add_row("realized_points_30m", str(points_30m), _ok(points_30m >= 10))
+            ddpct = (
+                drawdown_pct_last_window(tsdf, equity_usd=eq, window_min=30) 
+                if points_30m >= 10 else 0.0
+            )
+            table.add_row("pnl_drawdown_30m_pct", f"{ddpct:.2f}%", _ok(ddpct > -0.5))
         else:
-            table.add_row("exec_ledger_present", "False", _ok(False))
+            table.add_row("ledger_integrity", "missing", _ok(False))
+            table.add_row("realized_points_30m", "0", _ok(False))
+            table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
     else:
-        table.add_row("exec_day_dir_present", "False", _ok(False))
+        table.add_row("ledger_integrity", "no exec dir", _ok(False))
+        table.add_row("realized_points_30m", "0", _ok(False))
+        table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
 
     # LIVE LOOP HEALTH METRICS
 
