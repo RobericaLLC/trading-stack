@@ -5,12 +5,15 @@ import json
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    import websockets  # noqa: F401
-except Exception:  # pragma: no cover
-    websockets = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    import websockets
+else:
+    try:
+        import websockets
+    except Exception:  # pragma: no cover
+        websockets = None
 
 from trading_stack.core.schemas import MarketTrade
 
@@ -20,7 +23,8 @@ def _iso_to_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(UTC)
 
 async def _ws_connect(feed_path: str) -> Any:
-    assert websockets is not None, "websockets not installed. `pip install websockets`"
+    if websockets is None:
+        raise RuntimeError("websockets not installed. `pip install websockets`")
     uri = f"{BASE}/{feed_path}"
     return await websockets.connect(uri, ping_interval=15, ping_timeout=10)
 
