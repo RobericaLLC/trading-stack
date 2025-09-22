@@ -30,31 +30,56 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
     days = [p for p in live_root.glob("*") if p.is_dir()]
     if not days:
         return False
-    bars_path = days[-1] / f"bars1s_{symbol}.parquet"
-    if not bars_path.exists():
-        return False
-    df = pd.read_parquet(bars_path)
-    if df.empty:
-        return False
-    df["ts"] = pd.to_datetime(df["ts"], utc=True).sort_values()
-    now = pd.Timestamp.now(tz="UTC")
-    last_ts = df["ts"].iloc[-1]
-    age_s = (now - last_ts).total_seconds()
-    last_min = df[df["ts"] >= (now - pd.Timedelta(seconds=60))]
-    coverage = len(last_min) / 60.0  # seconds with bars
-    # IEX reality: accept if age ≤ 60s and ≥ ~50% of seconds have bars
-    return (age_s <= 60.0) and (coverage >= 0.5)
+    day = days[-1]
+    now = pd.Timestamp.utcnow().tz_localize("UTC")
+
+    bars_path = day / f"bars1s_{symbol}.parquet"
+    trades_path = day / f"trades_{symbol}.parquet"
+
+    bars_ok = False
+    if bars_path.exists():
+        dfb = pd.read_parquet(bars_path)
+        if not dfb.empty:
+            dfb["ts"] = pd.to_datetime(dfb["ts"], utc=True).sort_values()
+            age = (now - dfb["ts"].iloc[-1]).total_seconds()
+            last_min = dfb[dfb["ts"] >= (now - pd.Timedelta(seconds=60))]
+            coverage = len(last_min) / 60.0
+            bars_ok = (age <= 60.0) and (coverage >= 0.50)
+
+    trades_ok = False
+    if trades_path.exists():
+        dft = pd.read_parquet(trades_path)
+        if not dft.empty:
+            tcol = "ingest_ts" if "ingest_ts" in dft.columns else "ts"
+            dft[tcol] = pd.to_datetime(dft[tcol], utc=True)
+            dft = dft.sort_values(tcol)
+            age = (now - dft[tcol].iloc[-1]).total_seconds()
+            last_min = dft[dft[tcol] >= (now - pd.Timedelta(seconds=60))]
+            trades_ok = (age <= 10.0) and (len(last_min) >= 20)  # flexible for IEX
+
+    return bars_ok or trades_ok
 
 def _pnl_freeze_ok(
     ledger_root: Path, symbol: str, window_min: int = 30, freeze_dd_pct: float = -0.5
 ) -> bool:
-    """Return True if NOT frozen (i.e., drawdown above threshold)."""
+    """
+    Return True if NOT frozen by P&L logic.
+    - If there isn't enough realized P&L data in the window, return True (neutral).
+    - Otherwise freeze if drawdown <= threshold.
+    """
     today = _now().date().isoformat()
     ledger_path = Path(ledger_root) / today / "ledger.parquet"
     ts = realized_pnl_timeseries(ledger_path, symbol)
+    if ts.empty:
+        return True  # neutral: no realized data yet
+    # keep only recent window
+    ts = ts.sort_values("event_ts")
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=window_min)
+    tsw = ts[ts["event_ts"] >= cut]
+    if tsw.shape[0] < 10:  # not enough signal yet → neutral
+        return True
     equity = float(os.environ.get("EQUITY_USD", "30000"))
-    dd_pct = drawdown_pct_last_window(ts, equity_usd=equity, window_min=window_min)
-    # Freeze if drawdown ≤ threshold (e.g., ≤ -0.5%)
+    dd_pct = drawdown_pct_last_window(tsw, equity_usd=equity, window_min=window_min)
     return dd_pct > float(freeze_dd_pct)
 
 def _rate_limiter_ok(
