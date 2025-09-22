@@ -47,7 +47,7 @@ def synthetic(
     symbol: str = "SPY",
     minutes: int = 1,
     out: str = "data/synth_bars.parquet",
-):
+) -> None:
     now = _utcnow().replace(microsecond=0)
     bars: list[Bar1s] = []
     px = 500.0
@@ -80,7 +80,7 @@ def live_alpaca(
     feed: str = typer.Option("v2/iex", help="v2/iex, v2/sip, or v2/test"),
     out_dir: str = typer.Option("data/live", help="Root dir for captures"),
     flush_sec: float = typer.Option(5.0, help="Flush interval in seconds"),
-):
+) -> None:
     """
     Capture live trades via Alpaca WS.
     - minutes > 0: finite capture, write once.
@@ -103,7 +103,7 @@ def live_alpaca(
         raise typer.Exit(0)
 
     # minutes == 0 → continuous
-    async def run():
+    async def run() -> None:
         last_written_sec: datetime | None = None
         buckets: dict[datetime, _BarBucket] = {}
         trades_buf: list[MarketTrade] = []
@@ -157,7 +157,7 @@ def verify(
     out_dir: str = typer.Option("data/live", help="Root dir for live captures"),
     window_min: int = typer.Option(1, help="Window (minutes) for coverage/trade stats"),
     coverage_threshold: float = typer.Option(0.50, help="Bars per-second coverage threshold"),
-):
+) -> None:
     """
     Quick health check for latest live day:
       - Bars: last ts age, 1s coverage in last window, rows
@@ -211,6 +211,7 @@ def verify(
         trades_rows = len(dft)
         if trades_rows > 0:
             # determine timestamp columns
+            tcol: str | None
             if "ingest_ts" in dft.columns:
                 dft["ingest_ts"] = pd.to_datetime(dft["ingest_ts"], utc=True, errors="coerce")
                 ingest_ratio = float(dft["ingest_ts"].notna().sum()) / trades_rows
@@ -258,7 +259,8 @@ def verify(
     healthy = bool(bars_ok or trades_ok)
 
     # ---- Print report
-    def _fmt(v): return "NA" if v is None else (f"{v:.3f}" if isinstance(v, float) else str(v))
+    def _fmt(v: object) -> str:
+        return "NA" if v is None else (f"{v:.3f}" if isinstance(v, float) else str(v))
     typer.echo(f"── FEED VERIFY (symbol={symbol}, day={day.name})")
     typer.echo(f"Bars path:   {bars_path}  (exists={bars_path.exists()})")
     typer.echo(

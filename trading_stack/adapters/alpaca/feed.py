@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 try:
     import websockets  # noqa: F401
@@ -18,7 +19,7 @@ BASE = "wss://stream.data.alpaca.markets"
 def _iso_to_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(UTC)
 
-async def _ws_connect(feed_path: str):
+async def _ws_connect(feed_path: str) -> Any:
     assert websockets is not None, "websockets not installed. `pip install websockets`"
     uri = f"{BASE}/{feed_path}"
     return await websockets.connect(uri, ping_interval=15, ping_timeout=10)
@@ -57,7 +58,7 @@ async def stream_trades(symbol: str, feed: str = "v2/iex") -> AsyncIterator[Mark
 
 def capture_trades(symbol: str, minutes: int, feed: str = "v2/iex") -> list[MarketTrade]:
     """Finite capture variant (legacy)."""
-    async def _run():
+    async def _run() -> list[MarketTrade]:
         out: list[MarketTrade] = []
         end_at = datetime.now(UTC).timestamp() + minutes * 60
         async for t in stream_trades(symbol, feed):
