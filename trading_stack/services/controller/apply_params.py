@@ -48,13 +48,24 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
 def _pnl_freeze_ok(
     ledger_root: Path, symbol: str, window_min: int = 30, freeze_dd_pct: float = -0.5
 ) -> bool:
-    """Return True if NOT frozen (i.e., drawdown above threshold)."""
+    """
+    Return True if NOT frozen by P&L logic.
+    - If there isn't enough realized P&L data in the window, return True (neutral).
+    - Otherwise freeze if drawdown <= threshold.
+    """
     today = _now().date().isoformat()
     ledger_path = Path(ledger_root) / today / "ledger.parquet"
     ts = realized_pnl_timeseries(ledger_path, symbol)
+    if ts.empty:
+        return True  # neutral: no realized data yet
+    # keep only recent window
+    ts = ts.sort_values("event_ts")
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=window_min)
+    tsw = ts[ts["event_ts"] >= cut]
+    if tsw.shape[0] < 10:  # not enough signal yet → neutral
+        return True
     equity = float(os.environ.get("EQUITY_USD", "30000"))
-    dd_pct = drawdown_pct_last_window(ts, equity_usd=equity, window_min=window_min)
-    # Freeze if drawdown ≤ threshold (e.g., ≤ -0.5%)
+    dd_pct = drawdown_pct_last_window(tsw, equity_usd=equity, window_min=window_min)
     return dd_pct > float(freeze_dd_pct)
 
 def _rate_limiter_ok(
