@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import asyncio, json, os
-from datetime import datetime, timezone
-from typing import AsyncIterator, List, Optional
+import asyncio
+import json
+import os
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 try:
     import websockets  # noqa: F401
@@ -14,7 +16,7 @@ from trading_stack.core.schemas import MarketTrade
 BASE = "wss://stream.data.alpaca.markets"
 
 def _iso_to_dt(s: str) -> datetime:
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(UTC)
 
 async def _ws_connect(feed_path: str):
     assert websockets is not None, "websockets not installed. `pip install websockets`"
@@ -34,7 +36,7 @@ async def stream_trades(symbol: str, feed: str = "v2/iex") -> AsyncIterator[Mark
                 await ws.send(json.dumps({"action": "auth", "key": key, "secret": secret}))
                 await ws.send(json.dumps({"action": "subscribe", "trades": [symbol]}))
                 async for raw in ws:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     payload = json.loads(raw)
                     events = payload if isinstance(payload, list) else [payload]
                     for ev in events:
@@ -53,14 +55,14 @@ async def stream_trades(symbol: str, feed: str = "v2/iex") -> AsyncIterator[Mark
             # brief backoff before reconnect
             await asyncio.sleep(1.0)
 
-def capture_trades(symbol: str, minutes: int, feed: str = "v2/iex") -> List[MarketTrade]:
+def capture_trades(symbol: str, minutes: int, feed: str = "v2/iex") -> list[MarketTrade]:
     """Finite capture variant (legacy)."""
     async def _run():
-        out: List[MarketTrade] = []
-        end_at = datetime.now(timezone.utc).timestamp() + minutes * 60
+        out: list[MarketTrade] = []
+        end_at = datetime.now(UTC).timestamp() + minutes * 60
         async for t in stream_trades(symbol, feed):
             out.append(t)
-            if datetime.now(timezone.utc).timestamp() >= end_at:
+            if datetime.now(UTC).timestamp() >= end_at:
                 break
         return out
     return asyncio.run(_run())

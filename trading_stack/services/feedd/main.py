@@ -1,26 +1,26 @@
 from __future__ import annotations
+
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import random
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import typer
 
+from trading_stack.adapters.alpaca.feed import capture_trades, stream_trades
 from trading_stack.core.schemas import Bar1s, MarketTrade
-from trading_stack.adapters.alpaca.feed import stream_trades, capture_trades
-from trading_stack.ingest.aggregators import aggregate_trades_to_1s_bars
-from trading_stack.ingest.metrics import freshness_p99_ms, clock_offset_median_ms
 from trading_stack.core.schemas import MarketTrade as MT
+from trading_stack.ingest.aggregators import aggregate_trades_to_1s_bars
+from trading_stack.ingest.metrics import clock_offset_median_ms, freshness_p99_ms
 
 app = typer.Typer(help="feedd: data ingest (synthetic + live adapters + verification)")
 
 # ---------- utilities
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 def _now_pd_utc() -> pd.Timestamp:
     return pd.Timestamp.now(tz="UTC")
@@ -69,7 +69,7 @@ def synthetic(
 class _BarBucket:
     o: float
     h: float
-    l: float
+    low: float
     c: float
     v: int
 
@@ -110,13 +110,16 @@ def live_alpaca(
         next_flush = _utcnow() + timedelta(seconds=flush_sec)
         async for t in stream_trades(symbol, feed=feed):
             trades_buf.append(t)
-            sec = t.ts.replace(microsecond=0, tzinfo=timezone.utc)
+            sec = t.ts.replace(microsecond=0, tzinfo=UTC)
             b = buckets.get(sec)
             px = float(t.price)
             if b is None:
-                buckets[sec] = _BarBucket(o=px, h=px, l=px, c=px, v=int(t.size))
+                buckets[sec] = _BarBucket(o=px, h=px, low=px, c=px, v=int(t.size))
             else:
-                b.h = max(b.h, px); b.l = min(b.l, px); b.c = px; b.v += int(t.size)
+                b.h = max(b.h, px)
+                b.low = min(b.low, px)
+                b.c = px
+                b.v += int(t.size)
 
             now = _utcnow()
             if now >= next_flush:
@@ -133,7 +136,10 @@ def live_alpaca(
                 for k in sorted(buckets.keys()):
                     if last_written_sec is None or k > last_written_sec:
                         bb = buckets[k]
-                        new_bars.append(Bar1s(ts=k, symbol=symbol, open=bb.o, high=bb.h, low=bb.l, close=bb.c, volume=bb.v))
+                        new_bars.append(Bar1s(
+                            ts=k, symbol=symbol, open=bb.o, high=bb.h, 
+                            low=bb.low, close=bb.c, volume=bb.v
+                        ))
                 if new_bars:
                     df_bars = pd.DataFrame([b.model_dump(mode="json") for b in new_bars])
                     _append_parquet(bars_path, df_bars)
@@ -155,8 +161,10 @@ def verify(
     """
     Quick health check for latest live day:
       - Bars: last ts age, 1s coverage in last window, rows
-      - Trades: last ingest age, trades in window, %% with ingest_ts, freshness p99, clock offset median
-      Health PASS if (bars fresh & coverage>=threshold) OR (trades fresh with >=20 last minute).
+      - Trades: last ingest age, trades in window, %% with ingest_ts,
+        freshness p99, clock offset median
+      Health PASS if (bars fresh & coverage>=threshold) OR 
+        (trades fresh with >=20 last minute).
     """
     root = Path(out_dir)
     day_dirs = sorted([p for p in root.glob("*") if p.is_dir()])
@@ -242,7 +250,9 @@ def verify(
                         f99 = freshness_p99_ms(trades_models)
                         offs = clock_offset_median_ms(trades_models)
             # trades health relaxed vs bars; match controller logic
-            trades_ok = (trades_last_age_s is not None and trades_last_age_s <= 10.0) and (trades_last_min >= 20)
+            trades_ok = (
+                trades_last_age_s is not None and trades_last_age_s <= 10.0
+            ) and (trades_last_min >= 20)
 
     # ---- Health decision
     healthy = bool(bars_ok or trades_ok)
@@ -251,17 +261,33 @@ def verify(
     def _fmt(v): return "NA" if v is None else (f"{v:.3f}" if isinstance(v, float) else str(v))
     typer.echo(f"── FEED VERIFY (symbol={symbol}, day={day.name})")
     typer.echo(f"Bars path:   {bars_path}  (exists={bars_path.exists()})")
-    typer.echo(f"  rows={bars_rows}  last_ts={bars_last_ts}  age_s={_fmt(bars_age_s)}  coverage_{window_min}m={bars_cov:.0%}  PASS={bars_ok}")
+    typer.echo(
+        f"  rows={bars_rows}  last_ts={bars_last_ts}  age_s={_fmt(bars_age_s)}  "
+        f"coverage_{window_min}m={bars_cov:.0%}  PASS={bars_ok}"
+    )
     typer.echo(f"Trades path: {trades_path}  (exists={trades_path.exists()})")
-    typer.echo(f"  rows={trades_rows}  last_ingest_age_s={_fmt(trades_last_age_s)}  trades_{window_min}m={trades_last_min}  ingest_ts%={ingest_ratio:.0%}  PASS={trades_ok}")
+    typer.echo(
+        f"  rows={trades_rows}  last_ingest_age_s={_fmt(trades_last_age_s)}  "
+        f"trades_{window_min}m={trades_last_min}  ingest_ts%={ingest_ratio:.0%}  "
+        f"PASS={trades_ok}"
+    )
     if f99 is not None or offs is not None:
         typer.echo(f"  freshness_p99_ms={_fmt(f99)}  clock_offset_median_ms={_fmt(offs)}")
-    typer.echo(f"HEALTH: {'PASS' if healthy else 'FAIL'}  (bars_ok={bars_ok}, trades_ok={trades_ok})")
+    typer.echo(
+        f"HEALTH: {'PASS' if healthy else 'FAIL'}  "
+        f"(bars_ok={bars_ok}, trades_ok={trades_ok})"
+    )
 
     if not healthy:
         typer.echo("\nHints:")
-        typer.echo("  • Ensure feedd is running in continuous mode:  live-alpaca --minutes 0 --flush_sec 5")
-        typer.echo("  • Market hours? IEX thins out off-hours. During RTH, coverage should exceed 50%.")
+        typer.echo(
+            "  • Ensure feedd is running in continuous mode:  "
+            "live-alpaca --minutes 0 --flush_sec 5"
+        )
+        typer.echo(
+            "  • Market hours? IEX thins out off-hours. During RTH, "
+            "coverage should exceed 50%."
+        )
         typer.echo("  • Verify Windows time sync (w32tm) so ingest_ts is sane.")
 
 
