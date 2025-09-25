@@ -14,6 +14,10 @@ from trading_stack.core.schemas import Bar1s
 from trading_stack.engine.decision_engine import DecisionEngine
 from trading_stack.ipc.sqlite_queue import connect, enqueue
 from trading_stack.storage.ledger import append_ledger
+from trading_stack.utils.env_loader import load_env
+
+# Load environment variables on import
+load_env()
 
 app = typer.Typer()
 
@@ -82,7 +86,7 @@ def main(
                         # Write shadow ledger entry
                         shadow_ts = datetime.now(UTC)
                         day = shadow_ts.date().isoformat()
-                        shadow_path = f"{shadow_ledger_root}/{day}/ledger.parquet"
+                        shadow_path = f"{shadow_ledger_root}/{day}/shadow_ledger.parquet"
                         append_ledger(
                             shadow_path,
                             [
@@ -105,6 +109,10 @@ def main(
         except Exception as e:
             typer.echo(f"Error processing bars: {e}", err=True)
 
+        # Update heartbeat
+        from trading_stack.ops.heartbeat import beat
+        beat("engined")
+        
         time.sleep(poll_sec)
 
 

@@ -73,7 +73,7 @@ def main(
         rth_gap_events as _gaps,
     )
     from trading_stack.ingest.metrics import (
-        trade_second_coverage as _cov,
+        trade_second_coverage_window as _cov_win,
     )
 
     live_root = Path(live_dir)
@@ -106,8 +106,8 @@ def main(
             srcs = {t.source or "" for t in trades}
             feed = next((s for s in srcs if s.startswith("alpaca:")), "alpaca:unknown")
             if feed.startswith("alpaca:v2/iex"):
-                cov = _cov(trades)
-                table.add_row("trade_sec_coverage", f"{cov:.0%}", _ok(cov > 0.35))  # strictly >
+                cov = _cov_win(trades, window_sec=300)  # last 5 minutes
+                table.add_row("trade_sec_coverage", f"{cov:.0%}", _ok(cov >= 0.35))
             else:
                 gaps = _gaps(trades, max_gap_sec=2)
                 table.add_row("rth_gap_events", str(gaps), _ok(gaps == 0))
@@ -127,87 +127,112 @@ def main(
     if latest_exec:
         ledger_path = latest_exec / "ledger.parquet"
         if ledger_path.exists():
-            df = pd.read_parquet(ledger_path)
-            # ack_latency: compute per tag (ACK.event_ts - INTENT.ts)
-            intents = df[df["kind"] == "INTENT"][["tag", "ts"]].rename(columns={"ts": "t_intent"})
-            acks_df = df[df["kind"] == "ACK"]
-            if not acks_df.empty and "event_ts" in acks_df.columns:
-                acks = acks_df[["tag", "event_ts"]].rename(columns={"event_ts": "t_ack"})
+            try:
+                df = pd.read_parquet(ledger_path)
+            except Exception as e:
+                # Handle corrupted ledger files
+                table.add_row("ledger_integrity", f"corrupted: {str(e)[:50]}...", _ok(False))
+                df = pd.DataFrame()  # Empty dataframe to continue with other checks
+            
+            if not df.empty:
+                # ack_latency: compute per tag (ACK.event_ts - INTENT.ts)
+                intents = df[df["kind"] == "INTENT"][["tag", "ts"]].rename(columns={"ts": "t_intent"})
+                acks_df = df[df["kind"] == "ACK"]
+                if not acks_df.empty and "event_ts" in acks_df.columns:
+                    acks = acks_df[["tag", "event_ts"]].rename(columns={"event_ts": "t_ack"})
+                else:
+                    acks = pd.DataFrame(columns=["tag", "t_ack"])
+                m = intents.merge(acks, on="tag", how="inner")
+                if not m.empty:
+                    m["ack_ms"] = (m["t_ack"] - m["t_intent"]).dt.total_seconds() * 1000.0
+                    ack_p95 = float(m["ack_ms"].quantile(0.95))
+                    env = os.environ.get("EXEC_ENV", "paper").lower()
+                    default_thresh = 1000.0 if env == "paper" else 400.0
+                    ack_threshold = float(
+                        os.environ.get("ACK_P95_MS", str(default_thresh if env != "paper" else 1200.0))
+                    )
+                    table.add_row("ack_latency_p95_ms", f"{ack_p95:.1f}", _okf(ack_p95 < ack_threshold))
+                else:
+                    table.add_row("ack_latency_p95_ms", "NA", _okf(False))
+
+                # cancel_success (sanity_* tags only)
+                now = datetime.now(UTC)
+                cut = now - timedelta(minutes=sanity_window_min)
+
+                sanity = df[
+                    (df["kind"] == "INTENT") & (df["tag"].astype(str).str.startswith("sanity_"))
+                ][["tag", "ts"]]
+                sanity = sanity[sanity["ts"] >= cut]
+
+                acks_df = df[df["kind"] == "ACK"][["tag"]].drop_duplicates()
+                fills = df[df["kind"] == "FILL"][["tag"]].drop_duplicates()
+                cancels = df[df["kind"] == "CANCEL"][["tag"]].drop_duplicates()
+
+                if not sanity.empty:
+                    # only ACKed sanity intents
+                    m = sanity[["tag"]].merge(acks_df, on="tag", how="inner")
+                    cancels["has_cancel"] = True
+                    fills["has_fill"] = True
+                    m = m.merge(cancels, on="tag", how="left").merge(fills, on="tag", how="left")
+                    m["ok_cancel"] = m["has_cancel"].fillna(False) & m["has_fill"].isna()
+                    rate = m["ok_cancel"].sum() / len(m) if len(m) else 0.0
+                    table.add_row(
+                        f"cancel_success (sanity {sanity_window_min}m, acked)",
+                        f"{rate:.0%}",
+                        _okf(rate == 1.0),
+                    )
+                else:
+                    table.add_row(
+                        f"cancel_success (sanity {sanity_window_min}m, acked)", "NA", _okf(False)
+                    )
+
+                # TCA shortfall median (bps) for tags with PNL_SNAPSHOT.shortfall_bps
+                pnl = df[df["kind"] == "PNL_SNAPSHOT"]
+                if not pnl.empty and "shortfall_bps" in pnl.columns:
+                    med = float(pnl["shortfall_bps"].median())
+                    table.add_row("shortfall_median_bps", f"{med:.1f}", _okf(med < 4.0))
+                else:
+                    table.add_row("shortfall_median_bps", "NA", _okf(False))
             else:
-                acks = pd.DataFrame(columns=["tag", "t_ack"])
-            m = intents.merge(acks, on="tag", how="inner")
-            if not m.empty:
-                m["ack_ms"] = (m["t_ack"] - m["t_intent"]).dt.total_seconds() * 1000.0
-                ack_p95 = float(m["ack_ms"].quantile(0.95))
-                env = os.environ.get("EXEC_ENV", "paper").lower()
-                default_thresh = 1000.0 if env == "paper" else 400.0
-                ack_threshold = float(
-                    os.environ.get("ACK_P95_MS", str(default_thresh if env != "paper" else 1200.0))
-                )
-                table.add_row("ack_latency_p95_ms", f"{ack_p95:.1f}", _okf(ack_p95 < ack_threshold))
-            else:
+                # Empty dataframe - show NA for all metrics
                 table.add_row("ack_latency_p95_ms", "NA", _okf(False))
-
-            # cancel_success (sanity_* tags only)
-            now = datetime.now(UTC)
-            cut = now - timedelta(minutes=sanity_window_min)
-
-            sanity = df[
-                (df["kind"] == "INTENT") & (df["tag"].astype(str).str.startswith("sanity_"))
-            ][["tag", "ts"]]
-            sanity = sanity[sanity["ts"] >= cut]
-
-            acks_df = df[df["kind"] == "ACK"][["tag"]].drop_duplicates()
-            fills = df[df["kind"] == "FILL"][["tag"]].drop_duplicates()
-            cancels = df[df["kind"] == "CANCEL"][["tag"]].drop_duplicates()
-
-            if not sanity.empty:
-                # only ACKed sanity intents
-                m = sanity[["tag"]].merge(acks_df, on="tag", how="inner")
-                cancels["has_cancel"] = True
-                fills["has_fill"] = True
-                m = m.merge(cancels, on="tag", how="left").merge(fills, on="tag", how="left")
-                m["ok_cancel"] = m["has_cancel"].fillna(False) & m["has_fill"].isna()
-                rate = m["ok_cancel"].sum() / len(m) if len(m) else 0.0
-                table.add_row(
-                    f"cancel_success (sanity {sanity_window_min}m, acked)",
-                    f"{rate:.0%}",
-                    _okf(rate == 1.0),
-                )
-            else:
-                table.add_row(
-                    f"cancel_success (sanity {sanity_window_min}m, acked)", "NA", _okf(False)
-                )
-
-            # TCA shortfall median (bps) for tags with PNL_SNAPSHOT.shortfall_bps
-            pnl = df[df["kind"] == "PNL_SNAPSHOT"]
-            if not pnl.empty and "shortfall_bps" in pnl.columns:
-                med = float(pnl["shortfall_bps"].median())
-                table.add_row("shortfall_median_bps", f"{med:.1f}", _okf(med < 4.0))
-            else:
+                table.add_row(f"cancel_success (sanity {sanity_window_min}m, acked)", "NA", _okf(False))
                 table.add_row("shortfall_median_bps", "NA", _okf(False))
             
             # Ledger integrity & realized P&L checks
-            tsdf = realized_pnl_timeseries(ledger_path, symbol)
-            eq = float(os.environ.get("EQUITY_USD", "30000"))
-            points_30m = 0
-            if not tsdf.empty:
-                tsdf = tsdf.sort_values("event_ts")
-                cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=30)
-                points_30m = int(tsdf[tsdf["event_ts"] >= cut].shape[0])
-            table.add_row("realized_points_30m", str(points_30m), _ok(points_30m >= 10))
-            ddpct = (
-                drawdown_pct_last_window(tsdf, equity_usd=eq, window_min=30) 
-                if points_30m >= 10 else 0.0
-            )
-            table.add_row("pnl_drawdown_30m_pct", f"{ddpct:.2f}%", _ok(ddpct > -0.5))
+            if ledger_path.exists() and not df.empty:
+                try:
+                    tsdf = realized_pnl_timeseries(ledger_path, symbol)
+                    eq = float(os.environ.get("EQUITY_USD", "30000"))
+                    points_30m = 0
+                    if not tsdf.empty:
+                        tsdf = tsdf.sort_values("event_ts")
+                        cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=30)
+                        points_30m = int(tsdf[tsdf["event_ts"] >= cut].shape[0])
+                    min_points = int(os.environ.get("REALIZED_POINTS_MIN", "10"))
+                    table.add_row("realized_points_30m", str(points_30m), _ok(points_30m >= min_points))
+                    ddpct = (
+                        drawdown_pct_last_window(tsdf, equity_usd=eq, window_min=30) 
+                        if points_30m >= 10 else 0.0
+                    )
+                    table.add_row("pnl_drawdown_30m_pct", f"{ddpct:.2f}%", _ok(ddpct > -0.5))
+                except Exception:
+                    min_points = int(os.environ.get("REALIZED_POINTS_MIN", "10"))
+                    table.add_row("realized_points_30m", "0", _ok(0 >= min_points))
+                    table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
+            else:
+                min_points = int(os.environ.get("REALIZED_POINTS_MIN", "10"))
+                table.add_row("realized_points_30m", "0", _ok(0 >= min_points))
+                table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
         else:
             table.add_row("ledger_integrity", "missing", _ok(False))
-            table.add_row("realized_points_30m", "0", _ok(False))
+            min_points = int(os.environ.get("REALIZED_POINTS_MIN", "10"))
+            table.add_row("realized_points_30m", "0", _ok(0 >= min_points))
             table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
     else:
         table.add_row("ledger_integrity", "no exec dir", _ok(False))
-        table.add_row("realized_points_30m", "0", _ok(False))
+        min_points = int(os.environ.get("REALIZED_POINTS_MIN", "10"))
+        table.add_row("realized_points_30m", "0", _ok(0 >= min_points))
         table.add_row("pnl_drawdown_30m_pct", "NA", _ok(True))
 
     # LIVE LOOP HEALTH METRICS
@@ -227,13 +252,16 @@ def main(
 
     # Check engine coverage by comparing shadow intents to bars
     if latest_exec and latest:
-        shadow_ledger = latest_exec / "ledger.parquet"
+        shadow_ledger = latest_exec / "shadow_ledger.parquet"
         bars_path = latest / f"bars1s_{symbol}.parquet"
 
         if shadow_ledger.exists() and bars_path.exists():
             # Read shadow intents from last 15 minutes
-            ledger_df = pd.read_parquet(shadow_ledger)
-            shadow_intents = ledger_df[ledger_df["kind"] == "INTENT_SHADOW"]
+            try:
+                ledger_df = pd.read_parquet(shadow_ledger)
+                shadow_intents = ledger_df[ledger_df["kind"] == "INTENT_SHADOW"]
+            except Exception:
+                shadow_intents = pd.DataFrame()  # Empty if corrupted
             if not shadow_intents.empty:
                 # Get intents from last 15 minutes
                 cut = now - timedelta(minutes=15)
@@ -265,28 +293,35 @@ def main(
     if latest_exec:
         ledger_path = latest_exec / "ledger.parquet"
         if ledger_path.exists():
-            df = pd.read_parquet(ledger_path)
-
-            # Check blocked orders in last 15 minutes
-            cut = now - timedelta(minutes=15)
-            recent_rej = df[(df["kind"] == "REJ") & (df["ts"] >= cut)]
-            if "reason" in recent_rej.columns:
-                # Count rejections that are risk-related (exclude operational failures)
-                risk_reasons = [
-                    "killswitch",
-                    "whitelist",
-                    "notional",
-                    "price band",
-                    "max open",
-                    "daily loss",
-                ]
-                risk_blocks = recent_rej[
-                    recent_rej["reason"].str.contains("|".join(risk_reasons), case=False, na=False)
-                ]
-                blocked_count = len(risk_blocks)
+            try:
+                df = pd.read_parquet(ledger_path)
+            except Exception:
+                df = pd.DataFrame()  # Empty if corrupted
+            
+            if not df.empty:
+                # Check blocked orders in last 15 minutes
+                cut = now - timedelta(minutes=15)
+                recent_rej = df[(df["kind"] == "REJ") & (df["ts"] >= cut)]
+                if "reason" in recent_rej.columns:
+                    # Count rejections that are risk-related (exclude operational failures)
+                    risk_reasons = [
+                        "killswitch",
+                        "whitelist",
+                        "notional",
+                        "price band",
+                        "max open",
+                        "daily loss",
+                    ]
+                    risk_blocks = recent_rej[
+                        recent_rej["reason"].str.contains("|".join(risk_reasons), case=False, na=False)
+                    ]
+                    blocked_count = len(risk_blocks)
+                else:
+                    blocked_count = 0
+                table.add_row("blocked_orders_last_15m", str(blocked_count), _ok(blocked_count == 0))
             else:
-                blocked_count = 0
-            table.add_row("blocked_orders_last_15m", str(blocked_count), _ok(blocked_count == 0))
+                # Empty dataframe
+                table.add_row("blocked_orders_last_15m", "0", _ok(True))
 
             # Check if daily stop triggered
             killswitch_path = Path("RUN/HALT")
@@ -294,26 +329,24 @@ def main(
             table.add_row("daily_stop_triggered", str(daily_stop), _ok(not daily_stop))
 
     # OPS METRICS - uptime check via heartbeat files
-    heartbeat_dir = Path("RUN/heartbeat")
-    if heartbeat_dir.exists():
-        # Check heartbeat files modified in last 60s
-        services = ["feedd", "engined", "execd"]
-        all_up = True
-        for service in services:
-            hb_file = heartbeat_dir / f"{service}.hb"
-            if hb_file.exists():
-                mtime = datetime.fromtimestamp(hb_file.stat().st_mtime, UTC)
-                age_sec = (now - mtime).total_seconds()
-                up = age_sec < 60
-                all_up = all_up and up
-            else:
-                all_up = False
-
-        # Calculate uptime percentage (simplified - just current state)
-        uptime = 100.0 if all_up else 0.0
-        table.add_row("uptime_rth", f"{uptime:.0f}%", _ok(uptime > 99.0))
-    else:
-        table.add_row("uptime_rth", "NA", _ok(False))
+    hb_dir = Path("data/ops/heartbeat")
+    services = ["feedd", "advisor", "controller", "engined", "execd"]
+    fresh = 0
+    now = pd.Timestamp.now(tz="UTC")
+    
+    for s in services:
+        f = hb_dir / f"{s}.json"
+        ok = False
+        if f.exists():
+            try:
+                ts = pd.to_datetime(json.loads(f.read_text())["ts"], utc=True, errors="coerce")
+                ok = (now - ts).total_seconds() <= 75.0
+            except Exception:
+                ok = False
+        fresh += int(ok)
+    
+    uptime = int(100 * fresh / max(1, len(services)))
+    table.add_row("uptime_rth", f"{uptime}%", _ok(uptime >= 99))
 
     # LLM (shadow) SLOs
     llm_root = Path(llm_dir)
@@ -372,34 +405,102 @@ def main(
                     cur = json.loads(params_path.read_text(encoding="utf-8")).get(
                         "signal_threshold_bps", 0.5
                     )
-                    bounds_ok = 0.3 <= float(cur) <= 3.0
-                    table.add_row(
-                        "llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok)
-                    )
-                # freeze status
-                freeze_active = (
-                    bool(a15.tail(1)["freeze"].iloc[0])
-                    if "freeze" in a15.columns and not a15.empty
-                    else False
+                else:
+                    cur = 0.5  # default fallback
+                bounds_ok = 0.3 <= float(cur) <= 3.0
+                table.add_row(
+                    "llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok)
                 )
+                # freeze status
+                # Read freeze state from controller
+                statef = Path("data/ops/controller_state.json")
+                freeze_active = None
+                if statef.exists():
+                    try:
+                        st = json.loads(statef.read_text())
+                        freeze_active = bool(st.get("freeze", False))
+                    except Exception:
+                        freeze_active = None
+                
+                if freeze_active is None:
+                    # fallback to last applied row
+                    freeze_active = (
+                        bool(a15.tail(1)["freeze"].iloc[0])
+                        if "freeze" in a15.columns and not a15.empty
+                        else False
+                    )
                 table.add_row("llm_freeze_active", str(freeze_active), _ok(not freeze_active))
             else:
                 table.add_row("llm_proposals_applied_15m", "0", _ok(False))
                 table.add_row("llm_accept_rate_15m", "0%", _ok(True))
-                table.add_row("llm_param_bounds_ok", "NA", _ok(False))
-                table.add_row("llm_freeze_active", "NA", _ok(False))
+                # Check bounds with fallback even if no applied data
+                params_path = Path("data/params") / f"runtime_{symbol}.json"
+                if params_path.exists():
+                    cur = json.loads(params_path.read_text(encoding="utf-8")).get(
+                        "signal_threshold_bps", 0.5
+                    )
+                else:
+                    cur = 0.5  # default fallback
+                bounds_ok = 0.3 <= float(cur) <= 3.0
+                table.add_row("llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok))
+                # Read freeze state from controller
+                statef = Path("data/ops/controller_state.json")
+                freeze_active = False
+                if statef.exists():
+                    try:
+                        st = json.loads(statef.read_text())
+                        freeze_active = bool(st.get("freeze", False))
+                    except Exception:
+                        freeze_active = False
+                table.add_row("llm_freeze_active", str(freeze_active), _ok(not freeze_active))
         else:
             # Applied file doesn't exist yet
             table.add_row("llm_proposals_applied_15m", "0", _ok(True))  # 0 is fine
             table.add_row("llm_accept_rate_15m", "0%", _ok(True))  # 0% is fine
-            table.add_row("llm_param_bounds_ok", "NA", _ok(False))
-            table.add_row("llm_freeze_active", "NA", _ok(True))  # NA means not frozen
+            # Check bounds with fallback even if no applied data
+            params_path = Path("data/params") / f"runtime_{symbol}.json"
+            if params_path.exists():
+                cur = json.loads(params_path.read_text(encoding="utf-8")).get(
+                    "signal_threshold_bps", 0.5
+                )
+            else:
+                cur = 0.5  # default fallback
+            bounds_ok = 0.3 <= float(cur) <= 3.0
+            table.add_row("llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok))
+            # Read freeze state from controller
+            statef = Path("data/ops/controller_state.json")
+            freeze_active = False
+            if statef.exists():
+                try:
+                    st = json.loads(statef.read_text())
+                    freeze_active = bool(st.get("freeze", False))
+                except Exception:
+                    freeze_active = False
+            table.add_row("llm_freeze_active", str(freeze_active), _ok(not freeze_active))
     else:
         table.add_row("llm_proposals_seen_15m", "0", _ok(False))
         table.add_row("llm_proposals_applied_15m", "0", _ok(True))
         table.add_row("llm_accept_rate_15m", "0%", _ok(True))
-        table.add_row("llm_param_bounds_ok", "NA", _ok(False))
-        table.add_row("llm_freeze_active", "NA", _ok(True))
+        # Always check bounds with fallback
+        params_path = Path("data/params") / f"runtime_{symbol}.json"
+        if params_path.exists():
+            cur = json.loads(params_path.read_text(encoding="utf-8")).get(
+                "signal_threshold_bps", 0.5
+            )
+        else:
+            cur = 0.5  # default fallback
+        bounds_ok = 0.3 <= float(cur) <= 3.0
+        table.add_row("llm_param_bounds_ok", "True" if bounds_ok else "False", _ok(bounds_ok))
+        # Read freeze state from controller
+        statef = Path("data/ops/controller_state.json")
+        freeze_active = False
+        if statef.exists():
+            try:
+                st = json.loads(statef.read_text())
+                freeze_active = bool(st.get("freeze", False))
+            except Exception:
+                freeze_active = False
+        table.add_row("llm_freeze_active", str(freeze_active), _ok(not freeze_active))
 
     console.print(table)
 

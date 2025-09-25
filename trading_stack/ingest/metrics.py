@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, time
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -80,3 +80,23 @@ def clock_offset_median_ms(trades: Iterable[MarketTrade]) -> float:
     if not vals:
         return float("nan")
     return float(np.median(vals))
+
+
+def trade_second_coverage_window(
+    trades: Iterable[MarketTrade], window_sec: int = 300, tz_name: str = "America/New_York"
+) -> float:
+    """Coverage of seconds with ≥1 trade within the last window_sec (RTH only)."""
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(UTC)
+    start = now - timedelta(seconds=window_sec)
+    secs = set()
+    for t in trades:
+        ts = t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=UTC)
+        if ts < start or ts > now:
+            continue
+        et = ts.astimezone(tz)
+        if et.weekday() >= 5 or et.time() < time(9,30) or et.time() >= time(16,0):
+            continue
+        secs.add(ts.replace(microsecond=0))
+    span = max(1, window_sec)
+    return len(secs) / span

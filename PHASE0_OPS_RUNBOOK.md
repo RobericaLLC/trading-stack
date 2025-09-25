@@ -29,19 +29,19 @@ $env:EQUITY_USD = "30000"
 $env:EXEC_ENV   = "paper"
 
 # 1) Feed (continuous)
-python -m trading_stack.services.feedd.main live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out_dir data/live --flush_sec 5
+python -m trading_stack.services.feedd.main live-alpaca --symbol SPY --minutes 0 --feed v2/iex --out-dir data/live --flush-sec 2
 
 # 2) Advisor (shadow)
-python -m trading_stack.services.advisor.main --symbol SPY --bars_dir data/live --out_root data/llm --provider rules --interval_sec 5 --budget_usd 10
+python -m trading_stack.services.advisor.main --symbol SPY --bars-dir data/live --out-root data/llm --provider rules --interval-sec 5 --budget-usd 10
 
 # 3) Controller (guardrails + freeze)
-python -m trading_stack.services.controller.apply_params --symbol SPY --llm_root data/llm --live_root data/live --ledger_root data/exec --params_root data/params --interval_sec 5
+python -m trading_stack.services.controller.apply_params --symbol SPY --llm-root data/llm --live-root data/live --ledger-root data/exec --params-root data/params --interval-sec 5
 
 # 4) Engine
-python -m trading_stack.services.engined.live --symbol SPY --bars_dir data/live --queue data/queue.db --params_root data/params
+python -m trading_stack.services.engined.live --symbol SPY --bars-dir data/live --queue data/queue.db --params-root data/params
 
 # 5) Execution worker
-python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_root data/exec --poll_sec 0.25
+python -m trading_stack.services.execd.worker --queue data/queue.db --ledger-root data/exec --poll-sec 0.25
 ```
 
 ### 2. Initial Verification
@@ -53,9 +53,10 @@ python -m trading_stack.services.execd.worker --queue data/queue.db --ledger_roo
 
 Once the system is running:
 
-- **llm_freeze_active** should flip to `False` within one flush cycle (≤ 5 seconds) once trades start flowing
+- **llm_freeze_active** should flip to `False` within one flush cycle (≤ 2 seconds) once trades start flowing
 - Expect **at most 2 applied updates per 15 minutes**
 - **Acceptance rate** should be ≤ 30%
+- **Trade coverage** now uses 5-minute rolling window (target ≥ 35% for IEX)
 - If fills occur:
   - `realized_points_30m` will grow
   - Drawdown gate should remain `PASS`

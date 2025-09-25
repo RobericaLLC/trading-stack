@@ -14,6 +14,10 @@ from trading_stack.core.schemas import Bar1s, MarketTrade
 from trading_stack.core.schemas import MarketTrade as MT
 from trading_stack.ingest.aggregators import aggregate_trades_to_1s_bars
 from trading_stack.ingest.metrics import clock_offset_median_ms, freshness_p99_ms
+from trading_stack.utils.env_loader import load_env
+
+# Load environment variables on import
+load_env()
 
 app = typer.Typer(help="feedd: data ingest (synthetic + live adapters + verification)")
 
@@ -145,6 +149,10 @@ def live_alpaca(
                     _append_parquet(bars_path, df_bars)
                     last_written_sec = new_bars[-1].ts
 
+                # Update heartbeat after flush
+                from trading_stack.ops.heartbeat import beat
+                beat("feedd")
+                
                 next_flush = now + timedelta(seconds=flush_sec)
 
     asyncio.run(run())

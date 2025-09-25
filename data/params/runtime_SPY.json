@@ -1,6 +1,6 @@
 {
   "symbol": "SPY",
-  "signal_threshold_bps": 0.342,
+  "signal_threshold_bps": 0.355,
   "risk_multiplier": 1.0,
-  "updated_at": "2025-09-22T18:59:55.634421+00:00"
+  "updated_at": "2025-09-25T20:00:49.488688+00:00"
 }
