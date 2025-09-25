@@ -7,6 +7,10 @@ from pathlib import Path
 import typer
 
 from trading_stack.llm.advisor import append_proposal, make_proposal
+from trading_stack.utils.env_loader import load_env
+
+# Load environment variables on import
+load_env()
 
 app = typer.Typer(help="LLM advisor (shadow). Emits strict-JSON param proposals; does NOT trade.")
 
@@ -39,6 +43,11 @@ def main(
         cost = 0.0
         append_proposal(out_path, proposal, provider, cost)
         spent += cost
+        
+        # Update heartbeat after proposal
+        from trading_stack.ops.heartbeat import beat
+        beat("advisor")
+        
         time.sleep(interval_sec)
 
 

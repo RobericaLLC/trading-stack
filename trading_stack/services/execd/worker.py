@@ -14,6 +14,10 @@ from trading_stack.core.schemas import NewOrder
 from trading_stack.ipc.sqlite_queue import ack, connect, nack, reserve
 from trading_stack.risk.gate import RiskConfig, pretrade_check
 from trading_stack.storage.ledger import append_ledger, read_ledger
+from trading_stack.utils.env_loader import load_env
+
+# Load environment variables on import
+load_env()
 
 app = typer.Typer()
 
@@ -77,6 +81,10 @@ def main(
         try:
             row = reserve(con, "order_intents")
             if not row:
+                # Update heartbeat even when idle
+                from trading_stack.ops.heartbeat import beat
+                beat("execd")
+                
                 time.sleep(poll_sec)
                 loops += 1
                 if max_loop and loops >= max_loop:

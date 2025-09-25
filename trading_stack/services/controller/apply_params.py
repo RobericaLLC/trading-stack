@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import UTC, datetime
@@ -10,6 +11,10 @@ import typer
 
 from trading_stack.accounting.realized import drawdown_pct_last_window, realized_pnl_timeseries
 from trading_stack.params.runtime import RuntimeParams, append_applied
+from trading_stack.utils.env_loader import load_env
+
+# Load environment variables on import
+load_env()
 
 app = typer.Typer(help="Apply LLM proposals to runtime params with strict guardrails.")
 
@@ -31,7 +36,7 @@ def _feed_health_ok(live_root: Path, symbol: str) -> bool:
     if not days:
         return False
     day = days[-1]
-    now = pd.Timestamp.utcnow().tz_localize("UTC")
+    now = pd.Timestamp.now(tz="UTC")
 
     bars_path = day / f"bars1s_{symbol}.parquet"
     trades_path = day / f"trades_{symbol}.parquet"
@@ -129,6 +134,21 @@ def main(
             applied_path, proposals_path, max_accept_rate=0.30, window_min=15
         )
         freeze = not (healthy and not_frozen and rate_ok)
+        
+        # Persist controller state for scorecard
+        state = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "feed_healthy": bool(healthy),
+            "pnl_ok": bool(not_frozen),
+            "rate_ok": bool(rate_ok),
+            "freeze": bool(freeze),
+        }
+        Path("data/ops").mkdir(parents=True, exist_ok=True)
+        Path("data/ops/controller_state.json").write_text(json.dumps(state, indent=2), encoding="utf-8")
+        
+        # Update heartbeat
+        from trading_stack.ops.heartbeat import beat
+        beat("controller")
 
         df = _read_latest_proposals(proposals_path, lookback_min=15)
         seen = len(df)

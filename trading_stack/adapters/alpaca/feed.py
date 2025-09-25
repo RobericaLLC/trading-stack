@@ -30,6 +30,10 @@ async def _ws_connect(feed_path: str) -> Any:
 
 async def stream_trades(symbol: str, feed: str = "v2/iex") -> AsyncIterator[MarketTrade]:
     """Async generator yielding MarketTrade indefinitely (until cancelled)."""
+    # Try to load environment variables from .env if not already set
+    from trading_stack.utils.env_loader import load_env
+    load_env()
+    
     key = os.environ.get("ALPACA_API_KEY_ID")
     secret = os.environ.get("ALPACA_API_SECRET_KEY")
     if not key or not secret:
